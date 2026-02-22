@@ -1,0 +1,763 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700;14..32,800;14..32,900&family=JetBrains+Mono:wght@400;500;700&family=Outfit:wght@300;400;500;600;700;800;900&family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+
+@import "tailwindcss";
+
+/* ============================================================
+   NextChord Design System — Sonic Blue × Obsidian
+   ─────────────────────────────────────────────────
+   音の可視化を、静かな確信で。
+   Music × Technology SaaS Identity
+   ============================================================ */
+
+:root {
+  /* ─── Core Background System ─── */
+  --nc-bg: #09090b;
+  /* Obsidian          */
+  --nc-surface: #111113;
+  /* Carbon            */
+  --nc-surface-2: #18181b;
+  /* Graphite          */
+  --nc-surface-3: #27272a;
+  /* Slate             */
+  --nc-border: rgba(255, 255, 255, 0.06);
+  --nc-border-hover: rgba(255, 255, 255, 0.12);
+
+  /* ─── Brand Colors ─── */
+  --nc-primary: #6366f1;
+  /* Sonic Blue (Indigo-500) */
+  --nc-primary-hover: #4f46e5;
+  /* Indigo-600              */
+  --nc-primary-soft: rgba(99, 102, 241, 0.10);
+  --nc-secondary: #8b5cf6;
+  /* Mist Violet             */
+
+  /* ─── Accent (CTA) ─── */
+  --nc-accent: #06b6d4;
+  /* Electric Cyan    */
+  --nc-accent-hover: #0891b2;
+
+  /* ─── Semantic Colors ─── */
+  --nc-success: #10b981;
+  --nc-error: #ef4444;
+  --nc-warning: #f59e0b;
+
+  /* ─── Text Hierarchy ─── */
+  --nc-text: #f4f4f5;
+  /* Zinc-100  — primary text      */
+  --nc-text-secondary: #a1a1aa;
+  /* Zinc-400  — secondary labels  */
+  --nc-text-muted: #71717a;
+  /* Zinc-500  — muted / captions  */
+  --nc-text-ghost: #52525b;
+  /* Zinc-600  — ghost text        */
+
+  /* ─── Gradients ─── */
+  --nc-gradient-brand: linear-gradient(135deg, #6366f1, #8b5cf6);
+  --nc-gradient-header: linear-gradient(90deg, #09090b 0%, #18181b 50%, #09090b 100%);
+  --nc-gradient-cta: linear-gradient(135deg, #06b6d4, #6366f1);
+  --nc-gradient-error: linear-gradient(135deg, #ef4444, #dc2626);
+
+  /* ─── Shadows ─── */
+  --nc-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --nc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --nc-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+  --nc-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.6);
+
+  /* ─── Radii ─── */
+  --nc-radius-sm: 6px;
+  --nc-radius-md: 10px;
+  --nc-radius-lg: 16px;
+  --nc-radius-xl: 24px;
+
+  /* ─── Transitions ─── */
+  --nc-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --nc-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+  --nc-transition-fast: 150ms var(--nc-ease-smooth);
+  --nc-transition-base: 250ms var(--nc-ease-smooth);
+
+  /* ─── Legacy Mappings (backward compat for components) ─── */
+  --gf-bg: var(--nc-bg);
+  --gf-surface: var(--nc-surface);
+  --gf-surface-2: var(--nc-surface-2);
+  --gf-surface-3: var(--nc-surface-3);
+  --gf-border: var(--nc-border);
+  --gf-amber: var(--nc-primary);
+  --gf-amber-dim: var(--nc-primary-hover);
+  --gf-amber-glow: var(--nc-primary-soft);
+  --gf-orange: var(--nc-warning);
+  --gf-teal: var(--nc-success);
+  --gf-indigo: var(--nc-secondary);
+  --gf-rose: var(--nc-error);
+  --gf-text: var(--nc-text);
+  --gf-text-dim: var(--nc-text-secondary);
+  --gf-text-muted: var(--nc-text-muted);
+}
+
+/* ─── Light Mode Override ─── */
+[data-theme="light"] {
+  --nc-bg: #f8f9fc;
+  --nc-surface: #ffffff;
+  --nc-surface-2: #f1f3f9;
+  --nc-surface-3: #e4e7ef;
+  --nc-border: rgba(0, 0, 0, 0.08);
+  --nc-border-hover: rgba(0, 0, 0, 0.14);
+
+  --nc-primary: #4f46e5;
+  --nc-primary-hover: #4338ca;
+  --nc-primary-soft: rgba(79, 70, 229, 0.08);
+  --nc-secondary: #7c3aed;
+
+  --nc-accent: #0891b2;
+  --nc-accent-hover: #0e7490;
+
+  --nc-text: #1e1e2e;
+  --nc-text-secondary: #555770;
+  --nc-text-muted: #8e8ea0;
+  --nc-text-ghost: #b4b4c4;
+
+  --nc-gradient-brand: linear-gradient(135deg, #4f46e5, #7c3aed);
+  --nc-gradient-header: linear-gradient(90deg, #f8f9fc 0%, #eef0f6 50%, #f8f9fc 100%);
+  --nc-gradient-cta: linear-gradient(135deg, #0891b2, #4f46e5);
+
+  --nc-shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --nc-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --nc-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.10);
+  --nc-shadow-xl: 0 16px 48px rgba(0, 0, 0, 0.12);
+}
+
+/* ─── Theme Transition (テーマ切替時のみ適用) ─── */
+[data-theme-transitioning] *,
+[data-theme-transitioning] {
+  transition: background-color 0.3s ease, border-color 0.3s ease, color 0.3s ease, box-shadow 0.3s ease !important;
+}
+
+
+/* ============================================================
+   TYPOGRAPHY
+   ============================================================ */
+body {
+  margin: 0;
+  font-family: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+  font-feature-settings: 'cv02', 'cv03', 'cv04', 'cv11';
+  letter-spacing: -0.011em;
+  overflow-x: hidden;
+  background-color: var(--nc-bg);
+  color: var(--nc-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+  letter-spacing: -0.03em;
+}
+
+code,
+pre,
+.font-mono {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-feature-settings: 'liga', 'calt';
+}
+
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--nc-surface-3);
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--nc-text-ghost);
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+}
+
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.nc-gradient-bg {
+  background: var(--nc-gradient-header);
+  border-bottom: 1px solid var(--nc-border);
+}
+
+.nc-logo-text {
+  background: var(--nc-gradient-brand);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  font-family: 'Outfit', sans-serif;
+  font-weight: 800;
+}
+
+.nc-logo-text-hero {
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 40%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  background-size: 200% 200%;
+  animation: gradientShift 6s ease infinite;
+}
+
+
+/* ============================================================
+   BUTTONS — 3-Tier Hierarchy
+   ============================================================ */
+
+/* Primary CTA — Electric Cyan → Sonic Blue gradient */
+.nc-btn-primary {
+  background: var(--nc-gradient-cta);
+  color: #fff;
+  font-weight: 700;
+  border: none;
+  border-radius: var(--nc-radius-md);
+  cursor: pointer;
+  transition: all var(--nc-transition-fast);
+  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.nc-btn-primary:hover {
+  box-shadow: 0 4px 16px rgba(6, 182, 212, 0.3);
+  filter: brightness(1.1);
+}
+
+.nc-btn-primary:active {
+  transform: scale(0.97);
+}
+
+.nc-btn-primary:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: none;
+}
+
+/* Secondary — Ghost with border */
+.nc-btn-secondary {
+  background: transparent;
+  color: var(--nc-text-secondary);
+  font-weight: 600;
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-md);
+  cursor: pointer;
+  transition: all var(--nc-transition-fast);
+}
+
+.nc-btn-secondary:hover {
+  background: var(--nc-surface-2);
+  border-color: var(--nc-border-hover);
+  color: var(--nc-text);
+}
+
+.nc-btn-secondary:active {
+  transform: scale(0.97);
+}
+
+/* Danger */
+.nc-btn-danger {
+  background: rgba(239, 68, 68, 0.1);
+  color: var(--nc-error);
+  font-weight: 600;
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  border-radius: var(--nc-radius-md);
+  cursor: pointer;
+  transition: all var(--nc-transition-fast);
+}
+
+.nc-btn-danger:hover {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+
+/* ============================================================
+   INPUTS
+   ============================================================ */
+.nc-input {
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-border);
+  color: var(--nc-text);
+  font-weight: 500;
+  outline: none;
+  transition: all var(--nc-transition-fast);
+}
+
+.nc-input::placeholder {
+  color: var(--nc-text-ghost);
+}
+
+.nc-input:focus {
+  border-color: var(--nc-primary);
+  box-shadow: 0 0 0 3px var(--nc-primary-soft);
+}
+
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.nc-card {
+  background: var(--nc-surface);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-xl);
+  transition: all var(--nc-transition-base);
+}
+
+.nc-card:hover {
+  border-color: var(--nc-border-hover);
+  box-shadow: var(--nc-shadow-md);
+}
+
+
+/* ============================================================
+   PLAYBACK BUTTON — Large circular play/pause
+   ============================================================ */
+.nc-large-play-btn {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nc-gradient-brand);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: all var(--nc-transition-fast);
+  box-shadow: 0 2px 10px rgba(99, 102, 241, 0.25);
+  flex-shrink: 0;
+}
+
+.nc-large-play-btn:hover {
+  transform: scale(1.06);
+  box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35);
+}
+
+.nc-large-play-btn:active {
+  transform: scale(0.95);
+}
+
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+.nc-timeline {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  background: var(--nc-surface-3);
+  border-radius: 99px;
+  cursor: pointer;
+}
+
+.nc-timeline::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--nc-primary);
+  cursor: pointer;
+  box-shadow: 0 0 6px rgba(99, 102, 241, 0.3);
+  transition: box-shadow var(--nc-transition-fast);
+}
+
+.nc-timeline::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 12px rgba(99, 102, 241, 0.5);
+}
+
+
+/* ============================================================
+   FEATURE RIBBON
+   ============================================================ */
+.nc-ribbon {
+  display: flex;
+  align-items: center;
+  overflow: visible;
+  gap: 2px;
+  padding: 6px 16px;
+  background: var(--nc-surface);
+  border-bottom: 1px solid var(--nc-border);
+  flex-shrink: 0;
+}
+
+.nc-ribbon-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 8px 14px;
+  cursor: pointer;
+  border-radius: var(--nc-radius-md);
+  transition: all var(--nc-transition-fast);
+  position: relative;
+  -webkit-user-select: none;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.nc-ribbon-item:hover {
+  background: var(--nc-surface-2);
+}
+
+.nc-ribbon-item.active,
+.nc-ribbon-item[data-active="true"] {
+  background: var(--nc-primary-soft);
+  color: var(--nc-primary);
+}
+
+.nc-ribbon-icon {
+  color: var(--nc-text-muted);
+  transition: color var(--nc-transition-fast);
+}
+
+.nc-ribbon-item:hover .nc-ribbon-icon {
+  color: var(--nc-text-secondary);
+}
+
+.nc-ribbon-item.active .nc-ribbon-icon {
+  color: var(--nc-primary);
+}
+
+.nc-ribbon-label {
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--nc-text-ghost);
+  white-space: nowrap;
+}
+
+.nc-ribbon-divider {
+  width: 1px;
+  height: 32px;
+  background: var(--nc-border);
+  margin: 0 6px;
+  flex-shrink: 0;
+}
+
+
+/* ============================================================
+   CHORD-LYRICS VIEW  (U-FRET style: monospace 2-line)
+   ============================================================ */
+.chord-lyrics-view {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 2rem 1rem 4rem;
+  font-family: 'BIZ UDGothic', 'Noto Sans Mono CJK JP', 'MS Gothic',
+    'Courier New', monospace;
+  font-size: 1rem;
+  line-height: 1.6;
+}
+
+.cl-header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid var(--nc-border);
+  font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+}
+
+.cl-title {
+  font-size: 2rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  color: var(--nc-text);
+  margin-bottom: 0.25rem;
+}
+
+.cl-artist {
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--nc-text-muted);
+}
+
+.cl-edit-hint {
+  text-align: center;
+  font-size: 0.7rem;
+  color: var(--nc-text-ghost);
+  margin-bottom: 1.5rem;
+  font-family: 'Outfit', sans-serif;
+}
+
+/* --- 行ブロック --- */
+.cl-line {
+  padding: 0.25rem 1rem;
+  margin-bottom: 0.6rem;
+  border-radius: var(--nc-radius-md);
+  cursor: pointer;
+  transition: background var(--nc-transition-fast);
+  border-left: 3px solid transparent;
+}
+
+.cl-line:hover {
+  background: var(--nc-surface);
+}
+
+.cl-line-active {
+  background: var(--nc-primary-soft) !important;
+  border-left-color: var(--nc-primary);
+}
+
+/* --- コード行: preでスペース保持 --- */
+.cl-chord-line {
+  white-space: pre;
+  color: var(--nc-primary);
+  font-weight: 700;
+  font-size: 0.95rem;
+  line-height: 1.5;
+  min-height: 1.5em;
+}
+
+.cl-chord-text {
+  color: var(--nc-primary);
+  font-weight: 700;
+  cursor: pointer;
+  transition: color var(--nc-transition-fast);
+}
+
+.cl-chord-text:hover {
+  color: var(--nc-secondary);
+}
+
+/* --- 歌詞行 --- */
+.cl-lyric-line {
+  color: var(--nc-text);
+  font-weight: 400;
+  line-height: 1.6;
+}
+
+/* --- コード編集インプット --- */
+.chord-edit-input {
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--nc-primary);
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-primary);
+  border-radius: var(--nc-radius-sm);
+  padding: 0 4px;
+  outline: none;
+  width: 60px;
+  box-shadow: 0 0 0 3px var(--nc-primary-soft);
+}
+
+/* --- 歌詞編集 --- */
+.cl-lyric-editable {
+  cursor: text;
+  border-bottom: 1px dashed transparent;
+  transition: border-color 0.2s, background 0.2s;
+  border-radius: 2px;
+  padding: 1px 0;
+}
+
+.cl-lyric-editable:hover {
+  border-bottom-color: var(--nc-text-muted);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.lyric-edit-input {
+  font-family: 'Noto Sans Mono', 'Courier New', monospace;
+  font-size: inherit;
+  color: var(--nc-text);
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-accent, #60a5fa);
+  border-radius: var(--nc-radius-sm);
+  padding: 2px 6px;
+  outline: none;
+  width: 100%;
+  box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.2);
+}
+
+/* ============================================================
+   ERROR SCREEN — Structured, professional
+   ============================================================ */
+.nc-error-screen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  max-width: 480px;
+  width: 100%;
+  padding: 3rem 2rem;
+}
+
+.nc-error-icon-container {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  margin-bottom: 2rem;
+}
+
+.nc-error-icon-bg {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.08);
+  animation: errorPulse 3s ease-in-out infinite;
+}
+
+.nc-error-icon {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--nc-error);
+}
+
+.nc-error-title {
+  font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+  font-size: 1.75rem;
+  font-weight: 800;
+  color: var(--nc-text);
+  letter-spacing: -0.02em;
+  margin-bottom: 0.75rem;
+}
+
+.nc-error-message {
+  font-size: 0.95rem;
+  font-weight: 400;
+  color: var(--nc-text-secondary);
+  line-height: 1.7;
+  margin-bottom: 1.5rem;
+}
+
+.nc-error-detail {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.75rem;
+  color: var(--nc-error);
+  background: rgba(239, 68, 68, 0.06);
+  border: 1px solid rgba(239, 68, 68, 0.1);
+  border-radius: var(--nc-radius-md);
+  padding: 0.75rem 1.25rem;
+  margin-bottom: 2rem;
+  max-width: 100%;
+  word-break: break-all;
+}
+
+.nc-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+
+/* ============================================================
+   TOAST NOTIFICATIONS
+   ============================================================ */
+.nc-toast {
+  position: fixed;
+  bottom: 2rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.75rem 1.5rem;
+  border-radius: var(--nc-radius-lg);
+  font-weight: 600;
+  font-size: 0.875rem;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  z-index: 100;
+  animation: slideInFromBottom 0.3s var(--nc-ease-spring);
+  box-shadow: var(--nc-shadow-xl);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.nc-toast-success {
+  background: rgba(16, 185, 129, 0.9);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.nc-toast-error {
+  background: rgba(239, 68, 68, 0.9);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+
+/* ============================================================
+   ANIMATIONS
+   ============================================================ */
+@keyframes gradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+
+  50% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes errorPulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+
+  50% {
+    transform: scale(1.3);
+    opacity: 0;
+  }
+}
+
+@keyframes slideInFromBottom {
+  from {
+    transform: translateX(-50%) translateY(10px);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateX(-50%) translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes brandGlow {
+
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(99, 102, 241, 0.15);
+  }
+
+  50% {
+    box-shadow: 0 0 30px rgba(99, 102, 241, 0.25);
+  }
+}
+
+.animate-brand-glow {
+  animation: brandGlow 4s ease-in-out infinite;
+}

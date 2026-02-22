@@ -1,0 +1,43 @@
+# NextChord - gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Virtual environments
+venv*/
+.venv/
+
+# Node
+node_modules/
+.next/
+dist/
+build/
+
+# Environment
+.env
+
+# Runtime data
+uploads/
+*.wav
+*.mp3
+
+# FFmpeg binary
+ffmpeg-*/
+
+# Temp/test files
+bp_test*.py
+bp_bench.py
+check_lyrics.py
+bench_result.txt
+whisper_test.txt
+bp_test.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs (kept in uploads, not in source)
+*.log
