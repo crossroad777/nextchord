@@ -138,7 +138,7 @@ async def lifespan(app: FastAPI):
             import torch
             device = "cuda" if torch.cuda.is_available() else "cpu"
             print(f"🔥 PyTorch device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device == "cuda" else ""))
-            whisper_model = whisper.load_model("medium", device=device)
+            whisper_model = whisper.load_model("base", device=device)
             print(f"AI Models loaded successfully. Whisper on: {device}")
         else:
             print("WARNING: whisper not available. Skipping lyrics model.")
