@@ -441,6 +441,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 perf_log.append(f"[SKIP] Whisper: whisper_model not available")
             
             # Whisper完了後にDemucs+basic-pitch開始（GPU空き確保）
+            # CPU環境ではDemucsが非常に遅いため、Deep Analysis時のみ実行
+            import torch
+            _has_gpu = torch.cuda.is_available()
             note_events = []
             if transcribe_notes:
                 # Deep Analysis の場合、分離済みギター音源を直接使う（Demucs再分離なし）
@@ -453,10 +456,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         guitar_wav_path=guitar_wav_override,
                         use_demucs=False, solo_guitar_mode=True, use_basic_pitch=True
                     )
-                else:
-                    print(f"[{session_id}] [PIPELINE] Normal mode: Demucs+basic-pitch...")
+                elif _has_gpu:
+                    print(f"[{session_id}] [PIPELINE] GPU mode: Demucs+basic-pitch...")
                     futures['note_events'] = executor.submit(
                         transcribe_notes, str(wav_path), use_demucs=True, solo_guitar_mode=True, use_basic_pitch=True
+                    )
+                else:
+                    # CPU環境: Demucsスキップ、basic-pitchのみ
+                    print(f"[{session_id}] [PIPELINE] CPU mode: basic-pitch only (Demucs skipped for speed)")
+                    futures['note_events'] = executor.submit(
+                        transcribe_notes, str(wav_path), use_demucs=False, solo_guitar_mode=True, use_basic_pitch=True
                     )
             else:
                 futures['note_events'] = None
@@ -498,8 +507,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             # === Whisper補完: Demucs vocals.wav で再解析 ===
             # フルミックスでは音楽に埋もれて歌詞を検出できない区間がある
             # Demucs分離後のvocals.wavで再度Whisperを実行し、欠落分を補完
+            # ⚡ CPU環境ではスキップ（Whisper追加実行は非常に遅いため）
             vocals_wav = session_dir / "htdemucs" / "converted" / "vocals.wav"
-            if whisper_model and vocals_wav.exists():
+            if whisper_model and vocals_wav.exists() and _has_gpu:
                 try:
                     t_vocal_whisper = time.time()
                     print(f"[{session_id}] [LYRICS] 🎤 Running Whisper on vocals.wav for supplementary detection...")
@@ -585,7 +595,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             # === 冒頭35秒の特別解析 ===
             # Whisperは曲冒頭を無音/音楽として誤判定しやすい
             # vocals.wavの冒頭35秒を切り出して超高感度で再解析
-            if whisper_model and vocals_wav.exists():
+            # ⚡ CPU環境ではスキップ（Whisper追加実行は非常に遅いため）
+            if whisper_model and vocals_wav.exists() and _has_gpu:
                 try:
                     import soundfile as sf
                     y_vocal, sr_vocal = sf.read(str(vocals_wav))
