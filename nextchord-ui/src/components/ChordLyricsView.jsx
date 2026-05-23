@@ -3,9 +3,9 @@ import React, { useMemo, useRef, useEffect, useState } from 'react';
 /**
  * ChordLyricsView — U-FRETスタイルのコード付き歌詞表示
  *
- * 等幅フォントで2行表示:
- *   行1: コード行 (半角スペースで位置合わせ)
- *   行2: 歌詞行 (lyrics_phrasesのテキストをそのまま使用)
+ * セグメントベースの2行表示:
+ *   コード名の真下に対応する歌詞文字列を配置
+ *   各セグメントは inline-block で、コード名の幅以上を確保
  */
 
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
@@ -24,14 +24,6 @@ function transposeChord(chord, semitones) {
 function cleanJapaneseText(text) {
     if (!text) return '';
     return text.replace(/\s+/g, '').trim();
-}
-
-/** 文字の表示幅（全角=2, 半角=1） */
-function charWidth(c) {
-    const code = c.charCodeAt(0);
-    if (code >= 0x3000) return 2;
-    if (code >= 0xFF01 && code <= 0xFF5E) return 2;
-    return 1;
 }
 
 /** インライン編集可能なコードラベル */
@@ -118,7 +110,6 @@ function EditableLyric({ text, startTime, onLyricEdit }) {
 
 /**
  * 日本語の自然な分割位置を探す
- * 助詞・接続助詞・て形の後を優先
  */
 function findSplitPoint(text, idealPos) {
     const searchRange = 8;
@@ -160,7 +151,6 @@ function findSplitPoint(text, idealPos) {
 function processPhrasesForDisplay(phrases, targetChars = 25) {
     if (!phrases || phrases.length === 0) return [];
 
-    // Pass 1: 連続フレーズをブロックに結合
     const blocks = [];
     let cur = {
         start: phrases[0].start,
@@ -183,7 +173,6 @@ function processPhrasesForDisplay(phrases, targetChars = 25) {
     }
     blocks.push(cur);
 
-    // Pass 2: 長いブロックを自然な位置で再分割
     const result = [];
     for (const block of blocks) {
         const text = block.text;
@@ -223,41 +212,31 @@ function processPhrasesForDisplay(phrases, targetChars = 25) {
 }
 
 /**
- * フレーズのテキスト内のコード位置を計算
- * structured_data のword-levelタイムスタンプを使って各文字の時刻を推定し、
- * コードのtimeと照合して正確な位置に配置する
+ * ★ コアアルゴリズム: フレーズ内のコードと歌詞をセグメントに分割
+ * 
+ * 各セグメント = { chord: string, lyrics: string, time: number }
+ * コード変化点で歌詞を区切り、各セグメントが対応する歌詞を持つ
  */
-function calculateChordPositions(chords, phraseText, startTime, endTime, data) {
-    if (chords.length === 0) return [];
-    if (!phraseText || phraseText.length === 0) {
-        return chords.map((c, i) => ({
-            chord: c.chord, time: c.time, charIdx: i * 4, col: i * 5,
-        }));
-    }
+function buildChordLyricSegments(chords, phraseText, startTime, endTime, data) {
+    const lyricText = phraseText || '';
+    const textLen = lyricText.length;
 
-    const textLen = phraseText.length;
-
-    // structured_data から、このフレーズ範囲内の歌詞タイムスタンプを構築
-    // 各文字に対応する発音時刻の配列を作る
-    const charTimes = [];  // charTimes[i] = i文字目の発音開始時刻
+    // 1. 各文字の発音時刻を推定
+    const charTimes = new Array(textLen);
 
     if (data && Array.isArray(data)) {
-        // フレーズ内のエントリを抽出（歌詞があるもののみ）
         const phraseEntries = data.filter(d =>
             d.lyric && d.lyric.trim() &&
             d.time >= startTime - 0.3 && d.time < endTime + 0.3
         );
 
-        // 各歌詞断片のテキストと時刻を並べる
         let pos = 0;
         for (const entry of phraseEntries) {
             const lyricClean = (entry.lyric || '').replace(/\s+/g, '');
             if (!lyricClean) continue;
 
-            // phraseText 内でこの歌詞テキストがどこにあるか探す
-            const idx = phraseText.indexOf(lyricClean, pos);
+            const idx = lyricText.indexOf(lyricClean, pos);
             if (idx >= 0) {
-                // この歌詞の各文字に時刻を割り当て
                 const lyricDuration = entry.lyric_duration || entry.duration || 0.5;
                 for (let c = 0; c < lyricClean.length; c++) {
                     const charTime = entry.time + (lyricDuration * c / Math.max(1, lyricClean.length));
@@ -266,33 +245,36 @@ function calculateChordPositions(chords, phraseText, startTime, endTime, data) {
                 pos = idx + lyricClean.length;
             }
         }
-
-        // 未設定の文字は前後から補間する
-        // まず最初と最後を設定
-        if (charTimes.length === 0 || charTimes[0] === undefined) {
-            charTimes[0] = startTime;
-        }
-        // 前方から埋める
-        for (let i = 1; i < textLen; i++) {
-            if (charTimes[i] === undefined) {
-                charTimes[i] = charTimes[i - 1] !== undefined
-                    ? charTimes[i - 1] + 0.05  // 微小増分
-                    : startTime + (endTime - startTime) * (i / textLen);
-            }
-        }
     }
 
-    // charTimesが空の場合はフォールバック（線形補間）
-    if (charTimes.length === 0) {
-        for (let i = 0; i < textLen; i++) {
-            charTimes[i] = startTime + (endTime - startTime) * (i / textLen);
+    // 未設定の文字を補間
+    if (textLen > 0 && charTimes[0] === undefined) {
+        charTimes[0] = startTime;
+    }
+    for (let i = 1; i < textLen; i++) {
+        if (charTimes[i] === undefined) {
+            charTimes[i] = charTimes[i - 1] !== undefined
+                ? charTimes[i - 1] + 0.05
+                : startTime + (endTime - startTime) * (i / textLen);
         }
     }
+    if (textLen === 0) {
+        // 歌詞なし（イントロ・間奏）→ コードのみ
+        return chords.map(c => ({
+            chord: c.chord,
+            lyrics: '',
+            time: c.time,
+        }));
+    }
 
-    const entries = [];
+    if (chords.length === 0) {
+        // コード変化なし → 歌詞のみ
+        return [{ chord: '', lyrics: lyricText, time: startTime }];
+    }
 
+    // 2. 各コードの文字位置を計算
+    const chordCharIdx = [];
     for (const c of chords) {
-        // コードのtimeに最も近い文字位置を見つける
         let bestIdx = 0;
         let bestDiff = Infinity;
         for (let i = 0; i < textLen; i++) {
@@ -302,41 +284,39 @@ function calculateChordPositions(chords, phraseText, startTime, endTime, data) {
                 bestIdx = i;
             }
         }
-
-        let col = 0;
-        for (let i = 0; i < bestIdx && i < phraseText.length; i++) {
-            col += charWidth(phraseText[i]);
-        }
-
-        entries.push({ chord: c.chord, time: c.time, charIdx: bestIdx, col });
+        chordCharIdx.push({ chord: c.chord, time: c.time, charIdx: bestIdx });
     }
 
-    // コード同士の重なりを防ぐ
-    for (let i = 1; i < entries.length; i++) {
-        const prev = entries[i - 1];
-        const minCol = prev.col + prev.chord.length + 1;
-        if (entries[i].col < minCol) {
-            entries[i].col = minCol;
+    // 重複するcharIdxを解消（次のコードは最低1文字先に）
+    for (let i = 1; i < chordCharIdx.length; i++) {
+        if (chordCharIdx[i].charIdx <= chordCharIdx[i - 1].charIdx) {
+            chordCharIdx[i].charIdx = Math.min(chordCharIdx[i - 1].charIdx + 1, textLen - 1);
         }
     }
 
-    return entries;
-}
+    // 3. セグメント構築
+    const segments = [];
 
-/**
- * コード位置からコード行文字列を構築
- */
-function buildChordString(chordPositions) {
-    let line = '';
-    let cursor = 0;
-    for (const cp of chordPositions) {
-        if (cp.col > cursor) {
-            line += ' '.repeat(cp.col - cursor);
-        }
-        line += cp.chord;
-        cursor = cp.col + cp.chord.length;
+    // 最初のコードより前に歌詞がある場合
+    if (chordCharIdx[0].charIdx > 0) {
+        segments.push({
+            chord: '',
+            lyrics: lyricText.substring(0, chordCharIdx[0].charIdx),
+            time: startTime,
+        });
     }
-    return line;
+
+    for (let i = 0; i < chordCharIdx.length; i++) {
+        const startIdx = chordCharIdx[i].charIdx;
+        const endIdx = (i + 1 < chordCharIdx.length) ? chordCharIdx[i + 1].charIdx : textLen;
+        segments.push({
+            chord: chordCharIdx[i].chord,
+            lyrics: lyricText.substring(startIdx, endIdx),
+            time: chordCharIdx[i].time,
+        });
+    }
+
+    return segments;
 }
 
 export function ChordLyricsView({ data, lyricsPhrases, displayPhrases, currentTime, onSeek, onChordEdit, onLyricEdit, transpose = 0, title, artist }) {
@@ -363,7 +343,6 @@ export function ChordLyricsView({ data, lyricsPhrases, displayPhrases, currentTi
 
         let phraseRanges = [];
 
-        // displayPhrases（サーバー側Janome処理済み）を優先、なければフロントエンド側で処理
         const phrases = (displayPhrases && displayPhrases.length > 0)
             ? displayPhrases
             : (lyricsPhrases && lyricsPhrases.length > 0)
@@ -372,12 +351,16 @@ export function ChordLyricsView({ data, lyricsPhrases, displayPhrases, currentTi
 
         if (phrases.length > 0) {
             const merged = phrases;
+            const songStart = data[0]?.time || 0;
+            if (merged[0].start - songStart > 2.0) {
+                phraseRanges.push({ startTime: songStart, endTime: merged[0].start, text: '', isInstrumental: true });
+            }
 
             for (let i = 0; i < merged.length; i++) {
                 const phrase = merged[i];
-                const prevEnd = i > 0 ? merged[i - 1].end : (data[0]?.time || 0);
+                const prevEnd = i > 0 ? merged[i - 1].end : songStart;
 
-                if (phrase.start - prevEnd > 3.0) {
+                if (i > 0 && phrase.start - prevEnd > 3.0) {
                     phraseRanges.push({ startTime: prevEnd, endTime: phrase.start, text: '', isInstrumental: true });
                 }
                 phraseRanges.push({ startTime: phrase.start, endTime: phrase.end, text: phrase.text, isInstrumental: false });
@@ -421,12 +404,11 @@ export function ChordLyricsView({ data, lyricsPhrases, displayPhrases, currentTi
             if (chords.length === 0 && !pr.text) continue;
 
             const lyricText = pr.text || '';
-            const chordPositions = calculateChordPositions(chords, lyricText, pr.startTime, pr.endTime, data);
-            const chordLine = buildChordString(chordPositions);
+            const segments = buildChordLyricSegments(chords, lyricText, pr.startTime, pr.endTime, data);
 
             result.push({
                 startTime: pr.startTime, endTime: pr.endTime,
-                chordLine, lyricText, chordPositions,
+                segments,
                 hasLyric: lyricText.length > 0, isInstrumental: pr.isInstrumental,
             });
         }
@@ -463,33 +445,27 @@ export function ChordLyricsView({ data, lyricsPhrases, displayPhrases, currentTi
                         className={`cl-line ${isActive ? 'cl-line-active' : ''}`}
                         onClick={() => onSeek && onSeek(line.startTime)}
                     >
-                        <div className="cl-chord-line">
-                            {onChordEdit ? (
-                                line.chordPositions.map((ce, ci) => {
-                                    const prevEnd = ci > 0
-                                        ? line.chordPositions[ci - 1].col + line.chordPositions[ci - 1].chord.length
-                                        : 0;
-                                    const spaces = ce.col - prevEnd;
-                                    return (
-                                        <React.Fragment key={ci}>
-                                            {spaces > 0 && <span>{' '.repeat(spaces)}</span>}
-                                            <EditableChord chord={ce.chord} time={ce.time} onChordEdit={onChordEdit} />
-                                        </React.Fragment>
-                                    );
-                                })
-                            ) : (
-                                <span>{line.chordLine}</span>
-                            )}
+                        {/* セグメントベースの2行表示: コードと歌詞が完全同期 */}
+                        <div className="cl-segments-row">
+                            {line.segments.map((seg, si) => (
+                                <div key={si} className="cl-segment">
+                                    <div className="cl-segment-chord">
+                                        {seg.chord ? (
+                                            onChordEdit ? (
+                                                <EditableChord chord={seg.chord} time={seg.time} onChordEdit={onChordEdit} />
+                                            ) : (
+                                                <span className="cl-chord-text">{seg.chord}</span>
+                                            )
+                                        ) : (
+                                            <span className="cl-chord-spacer">&nbsp;</span>
+                                        )}
+                                    </div>
+                                    <div className="cl-segment-lyric">
+                                        {seg.lyrics || '\u00A0'}
+                                    </div>
+                                </div>
+                            ))}
                         </div>
-                        {line.hasLyric && (
-                            <div className="cl-lyric-line">
-                                {onLyricEdit ? (
-                                    <EditableLyric text={line.lyricText} startTime={line.startTime} onLyricEdit={onLyricEdit} />
-                                ) : (
-                                    line.lyricText
-                                )}
-                            </div>
-                        )}
                     </div>
                 );
             })}

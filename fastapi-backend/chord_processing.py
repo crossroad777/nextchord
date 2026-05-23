@@ -49,38 +49,43 @@ def standardized_key(key_idx: int) -> str:
 
 def standardize_chord(chord_label: str) -> str:
     """
-    madmomのコードラベルを一般的な表記に変換する簡易関数
+    コードラベルを一般的な表記に変換する。
+    BTC large_voca (170クラス) の全14品質に対応。
     """
-    if not chord_label or chord_label == "N":
+    if not chord_label or chord_label == "N" or chord_label == "X":
         return "N.C."
     
-    # マッピング例: "G:maj" -> "G", "A:min" -> "Am"
+    # コロンなし = ルートのみ（BTC は "C" = C:maj として出力する場合あり）
+    if ":" not in chord_label:
+        return chord_label
+    
     try:
-        root, quality = chord_label.split(":")
-        if quality == "maj":
-            return root
-        elif quality == "min":
-            return f"{root}m"
-        elif quality == "dim":
-            return f"{root}dim"
-        elif quality == "aug":
-            return f"{root}aug"
-        elif quality == "sus2":
-            return f"{root}sus2"
-        elif quality == "sus4":
-            return f"{root}sus4"
-        elif quality == "7":
-            return f"{root}7"
-        elif quality == "maj7":
-            return f"{root}Maj7"
-        elif quality == "min7":
-            return f"{root}m7"
-        elif quality == "6":
-            return f"{root}6"
-        elif quality == "min6":
-            return f"{root}m6"
-        else:
-            return chord_label.replace(":", "")
+        root, quality = chord_label.split(":", 1)
+        # スラッシュコード対応 (例: "C:min/5" -> "Cm/G")
+        slash = ""
+        if "/" in quality:
+            quality, bass = quality.split("/", 1)
+            slash = f"/{bass}"
+        
+        quality_map = {
+            "maj": "",
+            "min": "m",
+            "dim": "dim",
+            "aug": "aug",
+            "min6": "m6",
+            "maj6": "6",
+            "min7": "m7",
+            "minmaj7": "mMaj7",
+            "maj7": "Maj7",
+            "7": "7",
+            "dim7": "dim7",
+            "hdim7": "m7(b5)",
+            "sus2": "sus2",
+            "sus4": "sus4",
+        }
+        
+        suffix = quality_map.get(quality, quality)
+        return f"{root}{suffix}{slash}"
     except ValueError:
         return chord_label
 
@@ -121,7 +126,7 @@ def _smooth_chord_segments(seg_starts, seg_labels, min_duration=0.5):
     
     n_before = len(starts)
     n_after = len(merged_starts)
-    print(f"[ChordSmooth] Segments: {n_before} → {n_after} (merged {n_before - n_after})")
+    print(f"[ChordSmooth] Segments: {n_before} -> {n_after} (merged {n_before - n_after})")
     
     return np.array(merged_starts), np.array(merged_labels)
 
@@ -235,23 +240,6 @@ def _normalize_chords_to_key(beat_chords, key_name):
         else:
             normalized.append(chord)
     
-    # Step 2: チャタリング除去
-    # 1拍だけ異なるコードは前のコードで置換（明らかなノイズ除去）
-    smoothed = list(normalized)
-    chatter_fixes = 0
-    for i in range(1, len(smoothed) - 1):
-        if (smoothed[i] != smoothed[i-1] and 
-            smoothed[i] != smoothed[i+1] and 
-            smoothed[i-1] == smoothed[i+1]):
-            smoothed[i] = smoothed[i-1]
-            chatter_fixes += 1
-    
-    # Step 3: レアコード統合
-    # 出現率2%未満のコードで、類似コード（メジャー↔マイナー等）が多数派なら統合
-    chord_counts = Counter(c for c in smoothed if c != "N.C.")
-    total_chords = sum(chord_counts.values())
-    rare_threshold = max(2, int(total_chords * 0.02))
-    
     def _chord_root(ch):
         """コード名からルートを抽出"""
         if len(ch) > 1 and ch[1] in '#b':
@@ -263,6 +251,104 @@ def _normalize_chords_to_key(beat_chords, key_name):
         root = _chord_root(ch)
         return ch[len(root):]
     
+    # Step 2: チャタリング除去
+    # 1拍だけ異なるコードは前のコードで置換（明らかなノイズ除去）
+    smoothed = list(normalized)
+    chatter_fixes = 0
+    for i in range(1, len(smoothed) - 1):
+        if (smoothed[i] != smoothed[i-1] and 
+            smoothed[i] != smoothed[i+1] and 
+            smoothed[i-1] == smoothed[i+1]):
+            smoothed[i] = smoothed[i-1]
+            chatter_fixes += 1
+    
+    # Step 2.5: ダイアトニックバイアス補正
+    # キーのダイアトニックコードに対し、非ダイアトニックで出現数が極めて少ないコードを補正
+    # 例: G major で Cm(2回) → C に補正（Cはダイアトニック）
+    _DIATONIC = {
+        'C':  {'C', 'Dm', 'Em', 'F', 'G', 'Am', 'Bdim'},
+        'C#': {'C#', 'D#m', 'E#m', 'F#', 'G#', 'A#m', 'B#dim'},
+        'D':  {'D', 'Em', 'F#m', 'G', 'A', 'Bm', 'C#dim'},
+        'Eb': {'Eb', 'Fm', 'Gm', 'Ab', 'Bb', 'Cm', 'Ddim'},
+        'E':  {'E', 'F#m', 'G#m', 'A', 'B', 'C#m', 'D#dim'},
+        'F':  {'F', 'Gm', 'Am', 'Bb', 'C', 'Dm', 'Edim'},
+        'F#': {'F#', 'G#m', 'A#m', 'B', 'C#', 'D#m', 'E#dim'},
+        'G':  {'G', 'Am', 'Bm', 'C', 'D', 'Em', 'F#dim'},
+        'Ab': {'Ab', 'Bbm', 'Cm', 'Db', 'Eb', 'Fm', 'Gdim'},
+        'A':  {'A', 'Bm', 'C#m', 'D', 'E', 'F#m', 'G#dim'},
+        'Bb': {'Bb', 'Cm', 'Dm', 'Eb', 'F', 'Gm', 'Adim'},
+        'B':  {'B', 'C#m', 'D#m', 'E', 'F#', 'G#m', 'A#dim'},
+    }
+    
+    # マイナーキーのダイアトニック（自然短音階 + 和声短音階のV）
+    _DIATONIC_MINOR = {
+        'Am': {'Am', 'Bdim', 'C', 'Dm', 'Em', 'E', 'F', 'G'},
+        'Bm': {'Bm', 'C#dim', 'D', 'Em', 'F#m', 'F#', 'G', 'A'},
+        'Cm': {'Cm', 'Ddim', 'Eb', 'Fm', 'Gm', 'G', 'Ab', 'Bb'},
+        'Dm': {'Dm', 'Edim', 'F', 'Gm', 'Am', 'A', 'Bb', 'C'},
+        'Em': {'Em', 'F#dim', 'G', 'Am', 'Bm', 'B', 'C', 'D'},
+        'F#m': {'F#m', 'G#dim', 'A', 'Bm', 'C#m', 'C#', 'D', 'E'},
+        'G#m': {'G#m', 'A#dim', 'B', 'C#m', 'D#m', 'D#', 'E', 'F#'},
+    }
+    
+    key_mode = key_name.split()[-1].lower() if len(key_name.split()) > 1 else 'major'
+    diatonic_set = set()
+    if key_mode == 'minor':
+        minor_key = key_root + 'm'
+        diatonic_set = _DIATONIC_MINOR.get(minor_key, set())
+    if not diatonic_set:
+        diatonic_set = _DIATONIC.get(key_root, set())
+    
+    # 非ダイアトニックコードの補正マップ（同ルートのダイアトニックコードに変換）
+    diatonic_fixes = 0
+    diatonic_fix_map = {}
+    if diatonic_set:
+        chord_counts_pre = Counter(c for c in smoothed if c != 'N.C.')
+        for chord, count in chord_counts_pre.items():
+            if chord in diatonic_set or count > 3:  # 4回以上出現 = 意図的な非ダイアトニック
+                continue
+            root = _chord_root(chord)
+            quality = _chord_quality(chord)
+            # 同ルートでダイアトニックなコードを探す
+            for dc in diatonic_set:
+                if _chord_root(dc) == root and dc != chord:
+                    diatonic_fix_map[chord] = dc
+                    break
+        
+        if diatonic_fix_map:
+            for i in range(len(smoothed)):
+                if smoothed[i] in diatonic_fix_map:
+                    smoothed[i] = diatonic_fix_map[smoothed[i]]
+                    diatonic_fixes += 1
+            print(f"[ChordNormalize] Diatonic fixes: {diatonic_fix_map}")
+    
+    # Step 3: レアコード統合（保守的）
+    # 出現率1.5%未満のコードで、品質が近い類似コードがあれば統合
+    # ★ メジャー↔マイナーの統合は禁止（コード精度を最優先）
+    chord_counts = Counter(c for c in smoothed if c != "N.C.")
+    total_chords = sum(chord_counts.values())
+    rare_threshold = max(2, int(total_chords * 0.015))  # 1.5%に引き下げ
+    
+
+    
+    def _is_minor(q):
+        """マイナー系かどうか"""
+        return q.startswith('m') and not q.startswith('maj')
+    
+    def _quality_compatible(q1, q2):
+        """品質が統合可能かどうか（メジャー↔マイナーは禁止）"""
+        minor1 = _is_minor(q1)
+        minor2 = _is_minor(q2)
+        # メジャー↔マイナーの変換は禁止
+        if minor1 != minor2:
+            return False
+        # 7th → triad は許可 (Am7→Am, C7→C, Cmaj7→C)
+        # sus → triad は許可 (Csus4→C)
+        # dim/aug → triad は禁止（性格が大きく変わる）
+        if 'dim' in q1 or 'dim' in q2 or 'aug' in q1 or 'aug' in q2:
+            return False
+        return True
+    
     rare_merge_map = {}
     rare_fixes = 0
     for chord, count in chord_counts.items():
@@ -271,16 +357,17 @@ def _normalize_chords_to_key(beat_chords, key_name):
         root = _chord_root(chord)
         quality = _chord_quality(chord)
         
-        # 類似コードを検索（同じルートで違う品質）
+        # 類似コードを検索（同じルートで互換品質）
         candidates = []
         for other, other_count in chord_counts.items():
             if other == chord:
                 continue
             if _chord_root(other) == root and other_count > count:
-                candidates.append((other, other_count))
+                other_quality = _chord_quality(other)
+                if _quality_compatible(quality, other_quality):
+                    candidates.append((other, other_count))
         
         if candidates:
-            # 最も出現数が多い類似コードに統合
             best = max(candidates, key=lambda x: x[1])[0]
             rare_merge_map[chord] = best
     
@@ -503,7 +590,7 @@ def _fifth_distance(semi_a, semi_b):
 
 
 def _relative_semi(semi, mode):
-    """平行調の半音番号を返す（minor→+3=relative major, major→-3=relative minor）"""
+    """平行調の半音番号を返す（minor->+3=relative major, major->-3=relative minor）"""
     if mode == "minor":
         return (semi + 3) % 12
     else:

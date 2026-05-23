@@ -1,0 +1,89 @@
+{
+  "grid_search": [
+    {
+      "name": "baseline",
+      "thirds": 0.8743,
+      "time": 4.4
+    },
+    {
+      "name": "overlap_0.25",
+      "thirds": 0.8695,
+      "time": 2.8
+    },
+    {
+      "name": "overlap_0.5",
+      "thirds": 0.8747,
+      "time": 2.8
+    },
+    {
+      "name": "overlap_0.75",
+      "thirds": 0.8793,
+      "time": 3.7
+    },
+    {
+      "name": "vote_logit",
+      "thirds": 0.8743,
+      "time": 2.2
+    },
+    {
+      "name": "vote_prob",
+      "thirds": 0.8743,
+      "time": 2.3
+    },
+    {
+      "name": "overlap_0.5_logit",
+      "thirds": 0.8759,
+      "time": 2.7
+    },
+    {
+      "name": "overlap_0.5_prob",
+      "thirds": 0.8768,
+      "time": 2.8
+    },
+    {
+      "name": "smooth_logits",
+      "thirds": 0.8711,
+      "time": 2.4
+    },
+    {
+      "name": "smooth_logits_gauss",
+      "thirds": 0.8739,
+      "time": 2.7
+    },
+    {
+      "name": "smooth_preds",
+      "thirds": 0.8748,
+      "time": 2.6
+    },
+    {
+      "name": "full_logit_ov0.5_ks5",
+      "thirds": 0.8769,
+      "time": 3.1
+    },
+    {
+      "name": "full_logit_ov0.5_ks9",
+      "thirds": 0.8763,
+      "time": 3.1
+    },
+    {
+      "name": "full_logit_ov0.5_ks15",
+      "thirds": 0.8711,
+      "time": 3.1
+    },
+    {
+      "name": "full_prob_ov0.5",
+      "thirds": 0.8775,
+      "time": 3.1
+    }
+  ],
+  "best_config": {
+    "name": "overlap_0.75",
+    "kwargs": {
+      "use_overlap": true,
+      "overlap_ratio": 0.75
+    },
+    "score_20": 0.8793
+  },
+  "full_180_score": 0.8253,
+  "baseline_180": 0.8203
+}

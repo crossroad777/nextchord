@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useCallback } from 'react';
 import * as alphaTab from '@coderline/alphatab';
+import { TabEditor } from './TabEditor';
 
 const API_BASE = (import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000").trim();
 
-export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose = 0 }) => {
+export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose = 0, tuning = 'standard', visible = true, scoreVersion = 0, showTechniques = true }) => {
     const containerRef = useRef(null);
     const wrapperRef = useRef(null);
     const apiRef = useRef(null);
@@ -22,6 +23,7 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
     const tabOffsetRef = useRef(0); // ms単位のタイミングオフセット
     const firstBeatRef = useRef(0); // 秒単位: オーディオ中の最初のビート位置
     const beatTimesRef = useRef(null); // 秒単位: 全ビートタイムスタンプ配列
+    const beatsDataRef = useRef([]); // beats.jsonフォールバック: 秒単位のビート配列
 
     const [tabOffset, setTabOffset] = useState(0); // UI用（ms）
     const [sepStatus, setSepStatus] = useState({ processing: false, hasClean: false, deepProcessing: false, error: null });
@@ -64,23 +66,22 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
         }
     };
 
-    // ★ TAB表示後にAI分離をバックグラウンドで遅延実行（初回表示を優先）
-    const autoSeparateStarted = useRef(false);
-    useEffect(() => {
-        if (!sessionId) return;
-        if (autoSeparateStarted.current) return;
-        autoSeparateStarted.current = true;
-        // TABが先に描画されるよう10秒後に分離を開始
-        const timer = setTimeout(() => {
-            addLog('🤖 バックグラウンドでギター分離を開始...');
-            handleSeparate();
-        }, 10000);
-        return () => clearTimeout(timer);
-    }, [sessionId]);
+    // ★ [F-2] 自動Demucs実行を削除 — ユーザーが手動でボタンを押すまで実行しない
+    // const autoSeparateStarted = useRef(false);
+    // useEffect(() => {
+    //     if (!sessionId) return;
+    //     if (autoSeparateStarted.current) return;
+    //     autoSeparateStarted.current = true;
+    //     const timer = setTimeout(() => {
+    //         addLog('🤖 バックグラウンドでギター分離を開始...');
+    //         handleSeparate();
+    //     }, 10000);
+    //     return () => clearTimeout(timer);
+    // }, [sessionId]);
 
-    // 分離ステータスの監視
+    // 分離ステータスの監視 — processingがtrueの場合のみポーリング
     useEffect(() => {
-        if (!sessionId || sepStatus.hasClean) return;
+        if (!sessionId || sepStatus.hasClean || !sepStatus.processing) return;
         let timer;
         let cancelled = false;
         const check = async () => {
@@ -90,10 +91,8 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                 const data = await res.json();
                 if (data.has_clean_audio) {
                     setSepStatus(prev => ({ ...prev, processing: false, hasClean: true }));
-                    addLog('✅ ギター音源の分離完了');
+                    addLog('Guitar separation complete');
                     return;
-                } else if (data.is_separating) {
-                    setSepStatus(prev => ({ ...prev, processing: true }));
                 } else if (data.error) {
                     setSepStatus(prev => ({ ...prev, processing: false, error: data.error }));
                     return;
@@ -103,7 +102,7 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
         };
         check();
         return () => { cancelled = true; clearTimeout(timer); };
-    }, [sessionId, sepStatus.hasClean]);
+    }, [sessionId, sepStatus.hasClean, sepStatus.processing]);
 
     // ★ 分離完了後、5秒待ってからDeep Analysisを自動実行
     const autoDeepStarted = useRef(false);
@@ -481,7 +480,8 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
         }
 
         beatMapRef.current = deduped;
-        addLog(`✅ BeatMap: ${deduped.length} beats, Dur: ${(totalDurationMs / 1000).toFixed(1)}s`);
+        const syncMode = (bt && bt.length > 1) ? 'beats.json piecewise' : 'tempo-based linear';
+        addLog(`✅ BeatMap (${syncMode}): ${deduped.length} beats, Dur: ${(totalDurationMs / 1000).toFixed(1)}s`);
 
         setSyncStatus('READY');
         return true;
@@ -516,9 +516,9 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
     // AlphaTab 初期化
     // ============================================================
     useEffect(() => {
-        if (!wrapperRef.current || !sessionId || !containerRef.current) return;
+        if (!wrapperRef.current || !sessionId || !containerRef.current || !visible) return;
 
-        const key = `${sessionId}_${resetCounter}_${capo}_${transpose}`;
+        const key = `${sessionId}_${resetCounter}_${capo}_${transpose}_${tuning}_${scoreVersion}`;
         if (initializedSessionId.current === key) return;
         initializedSessionId.current = key;
 
@@ -551,6 +551,25 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                     addLog(`⚠️ beat_times取得失敗: ${e.message}`)
                 }
 
+                // beats.jsonフォールバック: /statusからbeat_timesが取れなかった場合
+                if (!beatTimesRef.current) {
+                    try {
+                        const beatsRes = await fetch(`${API_BASE}/files/${sessionId}/beats.json`);
+                        if (beatsRes.ok) {
+                            const beatsData = await beatsRes.json();
+                            let beats = Array.isArray(beatsData) ? beatsData : (beatsData.beats || []);
+                            if (beats.length > 0 && typeof beats[0] === 'object') beats = beats.map(b => b.time);
+                            beatsDataRef.current = beats;
+                            // beatTimesRefにも設定してtickToMsで使えるようにする
+                            if (beats.length > 1) {
+                                beatTimesRef.current = beats;
+                                firstBeatRef.current = beats[0];
+                                addLog(`🎯 beats.json fallback: ${beats.length} beats for piecewise sync`);
+                            }
+                        }
+                    } catch { /* ignore */ }
+                }
+
                 // MusicXMLの事前フェッチ
                 const xmlUrl = `${API_BASE}/result/${sessionId}/musicxml`;
                 addLog(`📥 MusicXML取得中: ${xmlUrl}`);
@@ -566,73 +585,8 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                     let xmlText = await preCheck.text();
                     addLog(`✅ MusicXML取得成功: ${xmlText.length} chars`);
 
-                    // 転調・カポをMusicXMLのピッチに直接適用
-                    const totalShift = transpose - capo; // 転調は上げ、カポは下げ
-                    if (totalShift !== 0) {
-                        const NOTES = ['C', 'C', 'D', 'D', 'E', 'F', 'F', 'G', 'G', 'A', 'A', 'B'];
-                        const ALTERS = [0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 1, 0];
-                        const NOTE_TO_MIDI = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
-
-                        // <pitch>...</pitch> ブロックを正規表現で検出して書き換え
-                        xmlText = xmlText.replace(
-                            /<pitch>\s*<step>([A-G])<\/step>\s*(?:<alter>([-.\d]+)<\/alter>\s*)?<octave>(\d+)<\/octave>\s*<\/pitch>/g,
-                            (match, step, alter, octave) => {
-                                const a = alter ? parseInt(alter) : 0;
-                                const midi = NOTE_TO_MIDI[step] + a + (parseInt(octave) + 1) * 12;
-                                const newMidi = midi + totalShift;
-                                const newPc = ((newMidi % 12) + 12) % 12;
-                                const newOctave = Math.floor(newMidi / 12) - 1;
-                                const newStep = NOTES[newPc];
-                                const newAlter = ALTERS[newPc];
-                                let result = `<pitch><step>${newStep}</step>`;
-                                if (newAlter !== 0) result += `<alter>${newAlter}</alter>`;
-                                result += `<octave>${newOctave}</octave></pitch>`;
-                                return result;
-                            }
-                        );
-
-                        // <harmony>内の<root-step>, <root-alter>も移調
-                        xmlText = xmlText.replace(
-                            /<root>\s*<root-step>([A-G])<\/root-step>\s*(?:<root-alter>([-.\d]+)<\/root-alter>\s*)?<\/root>/g,
-                            (match, step, alter) => {
-                                const a = alter ? parseInt(alter) : 0;
-                                const pc = ((NOTE_TO_MIDI[step] + a + totalShift) % 12 + 12) % 12;
-                                const newStep = NOTES[pc];
-                                const newAlter = ALTERS[pc];
-                                let result = `<root><root-step>${newStep}</root-step>`;
-                                if (newAlter !== 0) result += `<root-alter>${newAlter}</root-alter>`;
-                                result += `</root>`;
-                                return result;
-                            }
-                        );
-
-                        // 調号(<fifths>)も更新
-                        xmlText = xmlText.replace(
-                            /<fifths>(-?\d+)<\/fifths>/g,
-                            (match, fifths) => {
-                                // 五度圏でのシフト: 半音 → 五度圏位置のマッピング
-                                const SEMI_TO_FIFTH = [0, -5, 2, -3, 4, -1, 6, 1, -4, 3, -2, 5];
-                                const currentFifths = parseInt(fifths);
-                                const shiftMod = ((totalShift % 12) + 12) % 12;
-                                let newFifths = currentFifths + SEMI_TO_FIFTH[shiftMod];
-                                // -7 ~ 7 の範囲に収める
-                                while (newFifths > 7) newFifths -= 12;
-                                while (newFifths < -7) newFifths += 12;
-                                return `<fifths>${newFifths}</fifths>`;
-                            }
-                        );
-
-                        // TABパートの<fret>値も書き換え（カポ・転調を反映）
-                        xmlText = xmlText.replace(
-                            /<fret>(\d+)<\/fret>/g,
-                            (match, fret) => {
-                                const newFret = Math.max(0, parseInt(fret) + totalShift);
-                                return `<fret>${newFret}</fret>`;
-                            }
-                        );
-
-                        addLog(`🎵 Score transposed by ${totalShift} semitones (transpose=${transpose}, capo=${capo})`);
-                    }
+                    // ※ 転調・カポ・チューニングはretune APIでサーバー側処理済み
+                    // クライアント側の正規表現書き換えは不要
 
                     // テキストをUint8Arrayに変換
                     const encoder = new TextEncoder();
@@ -651,12 +605,13 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                 const containerWidth = containerRef.current?.clientWidth || wrapperRef.current?.clientWidth || 800;
                 addLog(`🔧 AlphaTab初期化中... (幅: ${containerWidth}px)`);
                 const api = new alphaTab.AlphaTabApi(wrapperRef.current, {
-                    core: { fontDirectory: '/font/', useWorkers: false },
+                    core: { fontDirectory: '/font/', useWorkers: false, enableAutoSizing: false, includeNoteBounds: true },
                     display: {
                         layoutMode: 'page',
                         staveProfile: 'Default',
                         width: containerWidth - 80,
-                        padding: [40, 40, 20, 40]
+                        padding: [40, 40, 60, 40],
+                        systemsLayoutMode: 1,  // UseModelLayout
                     },
                     notation: {
                         notationMode: 0,  // default mode（歌詞を表示）
@@ -673,7 +628,7 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                         }
                     },
                     player: {
-                        enablePlayer: true,
+                        enablePlayer: true,  // fretboard機能に必要
                         enableFretboard: true,
                         enableCursor: false,
                         soundFont: `${window.location.origin}/soundfont/sonivox.sf2`,
@@ -683,6 +638,10 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                 });
                 apiRef.current = api;
                 window.atApi = api;
+
+                // ★ AlphaTab内蔵シンセの音量を0に（外部オーディオで再生するため）
+                // enablePlayer=trueはfretboard表示に必要だが、音は不要
+                try { api.masterVolume = 0; } catch(e) { /* ignore */ }
 
                 // ★ イベントハンドラを先に登録（api.load()が同期的にイベント発火する場合に対応）
                 api.fretboard = document.getElementById('alphaTabFretboard');
@@ -697,16 +656,31 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                     if (tracks.length > 0) {
                         addLog(`🎵 全${tracks.length}トラックを描画`);
                         api.renderTracks(tracks);
+                        api._tracksRendered = true;  // ポーリング抑止フラグ
                     }
                 });
 
                 api.renderFinished.on(() => {
                     if (apiRef.current !== api) return;
+                    if (boundsReadyRef.current) return; // 既にBeatMap構築済み
                     addLog('🎨 Render Finished');
 
                     // スコア先頭が見えるようにスクロール位置を0にリセット
                     if (containerRef.current) {
                         containerRef.current.scrollTop = 0;
+                    }
+
+                    // MusicXMLのstaff-distance/system-distanceでスペーシング制御済み
+                    // overflow: visible でクリッピング防止のみ
+                    if (wrapperRef.current) {
+                        const surface = wrapperRef.current.querySelector('.at-surface');
+                        if (surface) {
+                            surface.style.overflow = 'visible';
+                        }
+                        const svgEls = wrapperRef.current.querySelectorAll('svg');
+                        svgEls.forEach(svg => {
+                            svg.style.overflow = 'visible';
+                        });
                     }
 
                     // AlphaTabのカーソル/選択関連DOM要素を非表示
@@ -741,13 +715,6 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                     if (containerRef.current) {
                         containerRef.current.scrollTo({ top: 0, behavior: 'instant' });
                     }
-                    setTimeout(() => {
-                        // ビートマップ確認ログ
-                        const map = beatMapRef.current;
-                        if (map && map.length > 0) {
-                            addLog(`✅ BeatMap ready: ${map.length} beats`);
-                        }
-                    }, 100);
 
                     setLoading(false);
                     setSyncStatus('READY');
@@ -766,6 +733,7 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                 // ★ scoreLoadedが発火しない場合のフォールバック: api.scoreをポーリングしてP2選択
                 const trackSelectTimer = setInterval(() => {
                     if (apiRef.current !== api) { clearInterval(trackSelectTimer); return; }
+                    if (api._tracksRendered) { clearInterval(trackSelectTimer); return; } // 既に描画済み
                     const score = api.score;
                     if (!score) return;
                     clearInterval(trackSelectTimer);
@@ -806,14 +774,18 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
             apiRef.current?.destroy();
             apiRef.current = null;
         };
-    }, [sessionId, resetCounter, capo, transpose]);
+    }, [sessionId, resetCounter, capo, transpose, tuning, visible, scoreVersion]);
 
     // ============================================================
     // 同期ループ
     // ★ カスタムカーソル駆動 + オートスクロール
     // ★ ユーザー手動スクロール時は一時停止（3秒後に自動復帰）
+    // ★ [F-4] visible=false 時はループを停止してCPU節約
     // ============================================================
     useEffect(() => {
+        // [F-4] 非表示時はrAFループを開始しない
+        if (!visible) return;
+
         let lastScrollMs = 0;
         let animId;
         let wasPlaying = false;
@@ -896,7 +868,15 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                 container.removeEventListener('touchmove', handleUserScroll);
             }
         };
-    }, [autoScroll]);
+    }, [autoScroll, visible]);
+
+    // ============================================================
+    // Score reload callback for TabEditor (after save)
+    // ============================================================
+    const handleScoreChanged = useCallback(() => {
+        // Increment resetCounter to trigger a full re-init of AlphaTab
+        setResetCounter(c => c + 1);
+    }, []);
 
     const statusColor = {
         INIT: 'bg-amber-400 animate-pulse',
@@ -923,8 +903,20 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                 </div>
             )}
 
-            {/* Score View (全幅) */}
+            {/* Score View (full width) */}
             <div className="flex-1 flex flex-col min-w-0 min-h-0">
+                {/* Editor toolbar — sits between fretboard and score */}
+                <div className="flex items-center gap-3 px-4 py-1.5 bg-slate-900 border-b border-white/10 flex-shrink-0">
+                    <TabEditor
+                        apiRef={apiRef}
+                        wrapperRef={wrapperRef}
+                        containerRef={containerRef}
+                        sessionId={sessionId}
+                        visible={visible}
+                        onScoreChanged={handleScoreChanged}
+                    />
+                </div>
+
                 {/* Virtual Fretboard Container */}
                 <div
                     id="alphaTabFretboard"
@@ -985,17 +977,32 @@ export const TabView = ({ sessionId, currentTime, isPlaying, capo = 0, transpose
                         </span>
                     </div>
                     {loading && (
-                        <div className="absolute inset-0 bg-white/95 z-40 flex flex-col items-center justify-center gap-4">
-                            <div className="w-16 h-16 border-[6px] border-slate-950 border-t-transparent rounded-full animate-spin" />
+                        <div className="absolute inset-0 bg-white/95 z-40 flex flex-col items-center justify-center gap-6 p-8" role="status" aria-label="Loading score">
+                            {/* Skeleton staff lines */}
+                            <div className="w-full max-w-2xl space-y-4">
+                                {[...Array(3)].map((_, row) => (
+                                    <div key={row} className="space-y-1">
+                                        {[...Array(5)].map((_, line) => (
+                                            <div key={line} className="nc-skeleton nc-skeleton-line" style={{ width: '100%', height: '2px', background: '#e5e7eb' }} />
+                                        ))}
+                                        <div className="flex gap-3 mt-2">
+                                            {[...Array(8)].map((_, note) => (
+                                                <div key={note} className="nc-skeleton" style={{ width: `${20 + Math.random() * 30}px`, height: '24px', borderRadius: '4px' }} />
+                                            ))}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
                             <div className="text-center space-y-2">
-                                <p className="text-[14px] font-black text-slate-950 uppercase tracking-[0.4em]">Rendering Score...</p>
+                                <div className="w-10 h-10 border-[4px] border-slate-950 border-t-transparent rounded-full animate-spin mx-auto" />
+                                <p className="text-[13px] font-black text-slate-950 uppercase tracking-[0.3em]">Rendering Score...</p>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase">
                                     {sepStatus.deepProcessing ? 'Analyzing Guitar Nuances...' : 'Building sync coordinates'}
                                 </p>
                             </div>
-                            {/* デバッグログ表示 */}
-                            <div className="mt-4 max-w-md w-full max-h-24 overflow-y-auto px-4">
-                                {logs.slice(0, 5).map((l, i) => (
+                            {/* Debug logs */}
+                            <div className="max-w-md w-full max-h-20 overflow-y-auto px-4">
+                                {logs.slice(0, 4).map((l, i) => (
                                     <p key={i} className="text-[9px] text-slate-400 font-mono truncate">{l}</p>
                                 ))}
                             </div>

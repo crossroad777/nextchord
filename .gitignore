@@ -41,3 +41,19 @@ Thumbs.db
 
 # Logs (kept in uploads, not in source)
 *.log
+
+# HF Space deployment
+hf-space/
+
+# Large model checkpoints (use LFS or download separately)
+# ChordMini/checkpoints/*.pth
+
+# IDE
+.vscode/
+.chrome-debug/
+
+# Temp
+tmp_*/
+frontend-dist/
+.pytest_cache/
+

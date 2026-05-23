@@ -1,5 +1,5 @@
 """
-Note Transcription Module — Solo Guitar Optimized
+Note Transcription Module -- Solo Guitar Optimized
 ===================================================
 Demucs でギタートラックを分離後、強化版 librosa で音符検出する。
 basic-pitch がインストールされている場合はそちらを優先使用。
@@ -24,7 +24,7 @@ import os
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple
 
-# MIDI番号 → 音名変換テーブル
+# MIDI番号 -> 音名変換テーブル
 NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
 # ギターの音域 (標準チューニング)
@@ -33,12 +33,17 @@ GUITAR_RANGE_MAX = 88   # E6 (1弦24フレット付近)
 
 
 # =========================================================================
-# Demucs 連携 — ギタートラック分離
+# Demucs 連携 -- ギタートラック分離
 # =========================================================================
 
 def separate_guitar_track(wav_path: str, output_dir: str = None) -> str:
     """
-    Demucs を使用してギタートラック（other.wav）を分離する。
+    Demucs を使用してギタートラックを分離する。
+    
+    優先順位:
+      1. htdemucs_6s → guitar.wav (ギター専用ステム、最高品質)
+      2. htdemucs → other.wav (フォールバック)
+    
     分離済みファイルが既に存在する場合はスキップ（キャッシュ）。
     
     Parameters
@@ -51,40 +56,62 @@ def separate_guitar_track(wav_path: str, output_dir: str = None) -> str:
     Returns
     -------
     str
-        分離されたギタートラック（other.wav）のパス。
+        分離されたギタートラックのパス。
         分離に失敗した場合は元のwav_pathを返す。
     """
     wav_p = Path(wav_path)
     if output_dir is None:
         output_dir = str(wav_p.parent)
     out_dir = Path(output_dir)
-    
-    # Demucs の出力構造: output_dir/htdemucs/songname/{bass,drums,other,vocals}.wav
     song_name = wav_p.stem
+    
+    # --- キャッシュチェック: htdemucs_6s の guitar.wav を最優先 ---
+    stems_6s_dir = out_dir / "htdemucs_6s" / song_name
+    guitar_6s_path = stems_6s_dir / "guitar.wav"
+    if guitar_6s_path.exists():
+        print(f"[NoteTranscription/Demucs] Using cached 6s guitar track: {guitar_6s_path}")
+        return str(guitar_6s_path)
+    
+    # キャッシュ: htdemucs_6s の曲名違いフォールバック
+    htdemucs_6s_dir = out_dir / "htdemucs_6s"
+    if htdemucs_6s_dir.exists():
+        for d in htdemucs_6s_dir.iterdir():
+            if d.is_dir() and (d / "guitar.wav").exists():
+                print(f"[NoteTranscription/Demucs] Using cached 6s guitar (alt name): {d / 'guitar.wav'}")
+                return str(d / "guitar.wav")
+    
+    # キャッシュ: htdemucs の other.wav (旧バージョン)
     stems_dir = out_dir / "htdemucs" / song_name
     guitar_path = stems_dir / "other.wav"
-    
-    # キャッシュチェック: 分離済みファイルが存在すればスキップ
     if guitar_path.exists():
-        print(f"[NoteTranscription/Demucs] Using cached guitar track: {guitar_path}")
+        print(f"[NoteTranscription/Demucs] Using cached htdemucs other.wav: {guitar_path}")
         return str(guitar_path)
     
-    # 空のキャッシュディレクトリがあれば削除（前回の失敗した分離の残骸）
-    if stems_dir.exists() and not any(stems_dir.iterdir()):
-        import shutil
-        shutil.rmtree(stems_dir, ignore_errors=True)
-        print(f"[NoteTranscription/Demucs] Cleaned up empty cache dir: {stems_dir}")
+    # htdemucs フォールバックキャッシュ
+    htdemucs_dir = out_dir / "htdemucs"
+    if htdemucs_dir.exists():
+        for d in htdemucs_dir.iterdir():
+            if d.is_dir() and (d / "other.wav").exists():
+                print(f"[NoteTranscription/Demucs] Using cached htdemucs other (alt name): {d / 'other.wav'}")
+                return str(d / "other.wav")
     
-    print(f"[NoteTranscription/Demucs] Separating guitar track from: {wav_path}")
-    print(f"[NoteTranscription/Demucs] Output dir: {out_dir}, expected: {guitar_path}")
+    # 空のキャッシュディレクトリがあれば削除
+    for stems in [stems_6s_dir, stems_dir]:
+        if stems.exists() and not any(stems.iterdir()):
+            import shutil
+            shutil.rmtree(stems, ignore_errors=True)
+            print(f"[NoteTranscription/Demucs] Cleaned up empty cache dir: {stems}")
+    
+    # === htdemucs_6s で分離（ギター専用ステム） ===
+    print(f"[NoteTranscription/Demucs] Separating with htdemucs_6s (6-stem, guitar-dedicated)")
     try:
         cmd = [
             sys.executable, "-m", "demucs.separate",
             "-o", str(out_dir),
-            "-n", "htdemucs",
+            "-n", "htdemucs_6s",
             str(wav_path)
         ]
-        print(f"[NoteTranscription/Demucs] Running command: {' '.join(cmd)}")
+        print(f"[NoteTranscription/Demucs] Running: {' '.join(cmd)}")
         result = subprocess.run(
             cmd, check=True, capture_output=True, text=True,
             env={"PYTHONIOENCODING": "utf-8", **os.environ}
@@ -94,41 +121,68 @@ def separate_guitar_track(wav_path: str, output_dir: str = None) -> str:
         if result.stderr:
             print(f"[NoteTranscription/Demucs] stderr: {result.stderr[:500]}")
         
-        # 出力ディレクトリの確認
-        if not stems_dir.exists():
-            # Demucs がファイル名をエスケープする場合のフォールバック
-            htdemucs_dir = out_dir / "htdemucs"
-            if htdemucs_dir.exists():
-                candidates = [d for d in htdemucs_dir.iterdir() if d.is_dir()]
-                print(f"[NoteTranscription/Demucs] Looking for stems in: {htdemucs_dir}, found dirs: {[d.name for d in candidates]}")
-                if candidates:
-                    stems_dir = candidates[-1]  # 最新のディレクトリ
-                    guitar_path = stems_dir / "other.wav"
+        # guitar.wav を探す
+        found = _find_stem(out_dir / "htdemucs_6s", song_name, "guitar.wav")
+        if found:
+            print(f"[NoteTranscription/Demucs] [OK] 6s guitar track: {found}")
+            return str(found)
         
-        if guitar_path.exists():
-            print(f"[NoteTranscription/Demucs] ✅ Guitar track separated: {guitar_path}")
-            return str(guitar_path)
-        else:
-            # 全stemsディレクトリを走査
-            htdemucs_dir = out_dir / "htdemucs"
-            if htdemucs_dir.exists():
-                for d in htdemucs_dir.iterdir():
-                    if d.is_dir():
-                        files = list(d.iterdir())
-                        print(f"[NoteTranscription/Demucs] Dir {d.name}: {[f.name for f in files]}")
-            print(f"[NoteTranscription/Demucs] ❌ other.wav not found in {stems_dir}")
-            return wav_path
-            
+        print(f"[NoteTranscription/Demucs] [WARN] htdemucs_6s succeeded but guitar.wav not found")
     except (subprocess.CalledProcessError, FileNotFoundError) as e:
-        print(f"[NoteTranscription/Demucs] ❌ Separation failed: {e}")
+        print(f"[NoteTranscription/Demucs] [WARN] htdemucs_6s failed: {e}")
         if hasattr(e, 'stderr') and e.stderr:
             print(f"[NoteTranscription/Demucs] stderr: {e.stderr[:500]}")
-        print(f"[NoteTranscription/Demucs] Falling back to original audio")
+    
+    # === フォールバック: htdemucs (4-stem) → other.wav ===
+    print(f"[NoteTranscription/Demucs] Falling back to htdemucs (4-stem, other.wav)")
+    try:
+        cmd = [
+            sys.executable, "-m", "demucs.separate",
+            "-o", str(out_dir),
+            "-n", "htdemucs",
+            str(wav_path)
+        ]
+        result = subprocess.run(
+            cmd, check=True, capture_output=True, text=True,
+            env={"PYTHONIOENCODING": "utf-8", **os.environ}
+        )
+        
+        found = _find_stem(out_dir / "htdemucs", song_name, "other.wav")
+        if found:
+            print(f"[NoteTranscription/Demucs] [OK] htdemucs other track: {found}")
+            return str(found)
+        
+        print(f"[NoteTranscription/Demucs] [ERR] other.wav not found after htdemucs")
+        return wav_path
+        
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        print(f"[NoteTranscription/Demucs] [ERR] All separation failed: {e}")
         return wav_path
 
 
+def _find_stem(model_dir: Path, song_name: str, stem_filename: str) -> Optional[Path]:
+    """Demucsの出力からステムファイルを探す（曲名エスケープ対応）"""
+    # 正確な曲名ディレクトリ
+    exact = model_dir / song_name / stem_filename
+    if exact.exists():
+        return exact
+    
+    # Demucs が曲名をエスケープした場合のフォールバック
+    if model_dir.exists():
+        candidates = sorted(model_dir.iterdir(), key=lambda d: d.stat().st_mtime, reverse=True)
+        for d in candidates:
+            if d.is_dir():
+                stem = d / stem_filename
+                if stem.exists():
+                    return stem
+                # htdemucs_6s ではファイル構造をログ
+                files = [f.name for f in d.iterdir()] if d.exists() else []
+                print(f"[NoteTranscription/Demucs] Dir {d.name}: {files}")
+    return None
+
+
 def midi_to_note_name(midi_pitch: int) -> str:
-    """MIDI番号を音名に変換 (例: 60 → 'C4')"""
+    """MIDI番号を音名に変換 (例: 60 -> 'C4')"""
     octave = (midi_pitch // 12) - 1
     note = NOTE_NAMES[midi_pitch % 12]
     return f"{note}{octave}"
@@ -161,7 +215,7 @@ def _remove_overlapping_notes(notes: List[Dict], max_polyphony: int = 6) -> List
         merged = [pitch_notes[0].copy()]
         for n in pitch_notes[1:]:
             prev = merged[-1]
-            # 前のノートと重複 or ほぼ連続 (30ms以内) → 統合
+            # 前のノートと重複 or ほぼ連続 (30ms以内) -> 統合
             if n["start_time"] <= prev["end_time"] + 0.03:
                 prev["end_time"] = max(prev["end_time"], n["end_time"])
                 prev["velocity"] = max(prev["velocity"], n["velocity"])
@@ -226,8 +280,9 @@ def _apply_velocity_dynamics(notes: List[Dict]) -> List[Dict]:
 
 # 各キーのスケール音（半音番号 0-11）
 SCALE_NOTES = {
-    # メジャースケール
+    # Major scales
     "C":  {0, 2, 4, 5, 7, 9, 11},
+    "C#": {1, 3, 5, 6, 8, 10, 0},
     "Db": {1, 3, 5, 6, 8, 10, 0},
     "D":  {2, 4, 6, 7, 9, 11, 1},
     "Eb": {3, 5, 7, 8, 10, 0, 2},
@@ -240,16 +295,19 @@ SCALE_NOTES = {
     "A":  {9, 11, 1, 2, 4, 6, 8},
     "Bb": {10, 0, 2, 3, 5, 7, 9},
     "B":  {11, 1, 3, 4, 6, 8, 10},
-    # マイナースケール（自然的短音階）
+    # Minor scales (natural minor)
     "Cm":  {0, 2, 3, 5, 7, 8, 10},
     "C#m": {1, 3, 4, 6, 8, 9, 11},
+    "Dbm": {1, 3, 4, 6, 8, 9, 11},  # enharmonic alias for C#m
     "Dm":  {2, 4, 5, 7, 9, 10, 0},
     "Ebm": {3, 5, 6, 8, 10, 11, 1},
     "Em":  {4, 6, 7, 9, 11, 0, 2},
     "Fm":  {5, 7, 8, 10, 0, 1, 3},
     "F#m": {6, 8, 9, 11, 1, 2, 4},
+    "Gbm": {6, 8, 9, 11, 1, 2, 4},  # enharmonic alias for F#m
     "Gm":  {7, 9, 10, 0, 2, 3, 5},
     "G#m": {8, 10, 11, 1, 3, 4, 6},
+    "Abm": {8, 10, 11, 1, 3, 4, 6},  # enharmonic alias for G#m
     "Am":  {9, 11, 0, 2, 4, 5, 7},
     "Bbm": {10, 0, 1, 3, 5, 6, 8},
     "Bm":  {11, 1, 2, 4, 6, 7, 9},
@@ -330,7 +388,7 @@ def _band_score_filter(notes: List[Dict], key: str = "C", bpm: float = 120.0,
 
     # === STEP 4: 調性フィルタ ===
     # スケール外の音の信頼度を下げる（完全除去はしない）
-    # キー文字列を SCALE_NOTES のキーに変換 ("A minor" → "Am", "C major" → "C")
+    # キー文字列を SCALE_NOTES のキーに変換 ("A minor" -> "Am", "C major" -> "C")
     scale_key = key
     if " minor" in key:
         scale_key = key.replace(" minor", "").strip() + "m"
@@ -372,7 +430,7 @@ def _band_score_filter(notes: List[Dict], key: str = "C", bpm: float = 120.0,
         notes = final_notes
         print(f"[BandScoreFilter] After density limit ({MAX_NOTES_PER_MEASURE}/measure): {len(notes)} notes (removed {before - len(notes)})")
 
-    print(f"[BandScoreFilter] Final: {original_count} → {len(notes)} notes ({original_count - len(notes)} removed)")
+    print(f"[BandScoreFilter] Final: {original_count} -> {len(notes)} notes ({original_count - len(notes)} removed)")
     return notes
 
 
@@ -410,7 +468,7 @@ def _enhanced_librosa_transcribe(
         aggregate=np.median, fmin=fmin, fmax=fmax,
         n_mels=128
     )
-    # Spectral Flux（CQTベース — 低音域の解像度が高い）
+    # Spectral Flux（CQTベース -- 低音域の解像度が高い）
     C = np.abs(librosa.cqt(y=y, sr=sr, hop_length=hop_length,
                            fmin=fmin, n_bins=60, bins_per_octave=12))
     onset_env_cqt = librosa.onset.onset_strength(
@@ -436,7 +494,7 @@ def _enhanced_librosa_transcribe(
     print(f"[NoteTranscription/Enhanced] Detected {len(onset_times)} onsets (ensemble)")
 
     # =========================================================================
-    # 2. 高精度ピッチ検出 (pyin — 最適化パラメータ)
+    # 2. 高精度ピッチ検出 (pyin -- 最適化パラメータ)
     # =========================================================================
     f0, voiced_flag, voiced_prob = librosa.pyin(
         y, fmin=fmin, fmax=fmax, sr=sr,
@@ -776,11 +834,11 @@ def transcribe_notes(
             detection_path = separate_guitar_track(wav_path)
             _dt_demucs = _time.time() - _t_demucs
             if detection_path != wav_path:
-                print(f"[NoteTranscription] ✅ Demucs guitar track separated in {_dt_demucs:.1f}s")
+                print(f"[NoteTranscription] [OK] Demucs guitar track separated in {_dt_demucs:.1f}s")
             else:
-                print(f"[NoteTranscription] ⚠️ Demucs returned original audio ({_dt_demucs:.1f}s)")
+                print(f"[NoteTranscription] [WARN] Demucs returned original audio ({_dt_demucs:.1f}s)")
         except Exception as e:
-            print(f"[NoteTranscription] ❌ Demucs failed: {type(e).__name__}: {e}")
+            print(f"[NoteTranscription] [ERR] Demucs failed: {type(e).__name__}: {e}")
             detection_path = wav_path
 
     note_events = None
@@ -805,11 +863,11 @@ def transcribe_notes(
             onnx_path = build_icassp_2022_model_path(FilenameSuffix.onnx)
             if onnx_path.exists():
                 model_path = onnx_path
-                print(f"[NoteTranscription] 🧠 basic-pitch ONNX model: {onnx_path}")
+                print(f"[NoteTranscription]  basic-pitch ONNX model: {onnx_path}")
             else:
-                print(f"[NoteTranscription] 🧠 basic-pitch default model: {model_path}")
+                print(f"[NoteTranscription]  basic-pitch default model: {model_path}")
 
-            print(f"[NoteTranscription] 🧠 basic-pitch AI で音符検出中... (file: {Path(detection_path).name})")
+            print(f"[NoteTranscription]  basic-pitch AI で音符検出中... (file: {Path(detection_path).name})")
             
             def _run_basic_pitch():
                 return predict(
@@ -830,23 +888,23 @@ def transcribe_notes(
                     model_output, midi_data, note_events = bp_future.result(timeout=TIMEOUT_SEC)
                     _dt_bp = _time.time() - _t_bp
                     transcription_method = "basic-pitch-onnx"
-                    print(f"[NoteTranscription] ✅ basic-pitch ONNX: {len(note_events)} notes in {_dt_bp:.1f}s")
+                    print(f"[NoteTranscription] [OK] basic-pitch ONNX: {len(note_events)} notes in {_dt_bp:.1f}s")
                 except cf.TimeoutError:
-                    print(f"[NoteTranscription] ⏰ basic-pitch timed out after {TIMEOUT_SEC}s, switching to librosa")
+                    print(f"[NoteTranscription]  basic-pitch timed out after {TIMEOUT_SEC}s, switching to librosa")
                     note_events = _enhanced_librosa_transcribe(
                         detection_path, onset_threshold, frame_threshold,
                         minimum_note_length, minimum_frequency, maximum_frequency
                     )
                     transcription_method = "enhanced-librosa (timeout-fallback)"
         except ImportError:
-            print("[NoteTranscription] ⚠️ basic-pitch not installed, using librosa")
+            print("[NoteTranscription] [WARN] basic-pitch not installed, using librosa")
             note_events = _enhanced_librosa_transcribe(
                 detection_path, onset_threshold, frame_threshold,
                 minimum_note_length, minimum_frequency, maximum_frequency
             )
             transcription_method = "enhanced-librosa"
         except Exception as e:
-            print(f"[NoteTranscription] ⚠️ basic-pitch failed: {type(e).__name__}: {e}")
+            print(f"[NoteTranscription] [WARN] basic-pitch failed: {type(e).__name__}: {e}")
             note_events = _enhanced_librosa_transcribe(
                 detection_path, onset_threshold, frame_threshold,
                 minimum_note_length, minimum_frequency, maximum_frequency
@@ -854,7 +912,7 @@ def transcribe_notes(
             transcription_method = "enhanced-librosa"
     else:
         # --- Librosa 高速検出（初回解析用） ---
-        print(f"[NoteTranscription] ⚡ Librosa高速検出モード (file: {Path(detection_path).name})")
+        print(f"[NoteTranscription]  Librosa高速検出モード (file: {Path(detection_path).name})")
         note_events = _enhanced_librosa_transcribe(
             detection_path, onset_threshold, frame_threshold,
             minimum_note_length, minimum_frequency, maximum_frequency
@@ -877,7 +935,7 @@ def transcribe_notes(
         end_time = float(event[1])
         midi_pitch = int(event[2])
         
-        # event[3] は amplitude (0.0-1.0) — velocity に変換
+        # event[3] は amplitude (0.0-1.0) -- velocity に変換
         amplitude = float(event[3]) if len(event) > 3 else 0.5
         velocity = max(20, min(127, int(amplitude * 127)))
         
@@ -929,10 +987,18 @@ def transcribe_notes(
         notes = _apply_velocity_dynamics(notes)
         
         # 倍音除去: 基音の1/2オクターブ上 + 完全5度上の偽ノートを除去
+        # Phase 0-3: 調性対応 — スケール内の音はconfidenceブースト
         harmonic_removed = 0
         keep = [True] * len(notes)
-        # 検出対象の倍音間隔: 12=1オクターブ, 24=2オクターブ, 7=完全5度, 19=1オクターブ+5度
         HARMONIC_INTERVALS = {12, 24, 7, 19}
+        
+        # 調性情報を取得（transcribe_notesのkey引数から）
+        _scale_key = key
+        if " minor" in _scale_key:
+            _scale_key = _scale_key.replace(" minor", "").strip() + "m"
+        elif " major" in _scale_key:
+            _scale_key = _scale_key.replace(" major", "").strip()
+        _scale = SCALE_NOTES.get(_scale_key, None)
         
         for i, n in enumerate(notes):
             if not keep[i]:
@@ -940,37 +1006,72 @@ def transcribe_notes(
             for j, m in enumerate(notes):
                 if i == j or not keep[j]:
                     continue
-                # 時間的に重複しているか
                 if m["start_time"] > n["end_time"] or m["end_time"] < n["start_time"]:
                     continue
                 pitch_diff = m["midi_pitch"] - n["midi_pitch"]
-                # 上方倍音で、信頼度が低い方を除去
-                if pitch_diff in HARMONIC_INTERVALS and m["confidence"] <= n["confidence"]:
-                    keep[j] = False
-                    harmonic_removed += 1
-                elif -pitch_diff in HARMONIC_INTERVALS and n["confidence"] < m["confidence"]:
-                    keep[i] = False
-                    harmonic_removed += 1
-                    break
+                if pitch_diff in HARMONIC_INTERVALS or -pitch_diff in HARMONIC_INTERVALS:
+                    # 調性フィルタ: スケール内の音は信頼度を1.3倍にして保護
+                    n_conf = n.get("confidence", 0.5)
+                    m_conf = m.get("confidence", 0.5)
+                    if _scale:
+                        if n["midi_pitch"] % 12 in _scale:
+                            n_conf *= 1.3
+                        if m["midi_pitch"] % 12 in _scale:
+                            m_conf *= 1.3
+                    
+                    if pitch_diff in HARMONIC_INTERVALS and m_conf <= n_conf:
+                        keep[j] = False
+                        harmonic_removed += 1
+                    elif -pitch_diff in HARMONIC_INTERVALS and n_conf < m_conf:
+                        keep[i] = False
+                        harmonic_removed += 1
+                        break
         
         notes = [n for i, n in enumerate(notes) if keep[i]]
         if harmonic_removed > 0:
-            print(f"[NoteTranscription] Harmonics removed: {harmonic_removed} (intervals: {HARMONIC_INTERVALS})")
+            print(f"[NoteTranscription] Harmonics removed: {harmonic_removed} (key-aware, scale={_scale_key})")
         
-        # ゴーストノート除去: 前後のノートと比較して極端に弱い音を除去
+        # Ghost note removal — Phase 0-3 improvement: widened from ±1 to ±3
+        # neighbor window for statistically robust velocity comparison.
+        # Previously only the immediately adjacent notes were used, which
+        # made the filter sensitive to local dynamics.  With ±3 neighbors
+        # the average velocity is more representative of the passage,
+        # reducing false removals while still catching true ghost artifacts.
         ghost_removed = 0
         if len(notes) > 2:
+            beat_sec = 60.0 / bpm if bpm > 0 else 0.5  # duration of one beat
             keep2 = [True] * len(notes)
-            for i in range(1, len(notes) - 1):
-                prev_vel = notes[i-1]["velocity"]
-                next_vel = notes[i+1]["velocity"]
+            for i in range(len(notes)):
                 curr_vel = notes[i]["velocity"]
-                avg_neighbor = (prev_vel + next_vel) / 2
-                # 周囲の平均の25%未満かつ、前後と時間的に近いノートを除去
-                if (curr_vel < avg_neighbor * 0.25 and
-                    notes[i]["start_time"] - notes[i-1]["start_time"] < 0.3):
+                curr_conf = notes[i].get("confidence", 1.0)
+
+                # --- On-beat exception: never remove notes on a beat ---
+                # A note is "on-beat" if its start_time is within 5% of a
+                # beat duration from the nearest beat grid line.
+                beat_phase = notes[i]["start_time"] % beat_sec
+                on_beat = beat_phase < beat_sec * 0.05 or beat_phase > beat_sec * 0.95
+                if on_beat:
+                    continue
+
+                # --- Collect up to 3 neighbors before and after ---
+                neighbor_vels: list[int] = []
+                for offset in range(1, 4):  # 1, 2, 3
+                    if i - offset >= 0:
+                        neighbor_vels.append(notes[i - offset]["velocity"])
+                    if i + offset < len(notes):
+                        neighbor_vels.append(notes[i + offset]["velocity"])
+
+                if not neighbor_vels:
+                    continue
+
+                avg_neighbor = sum(neighbor_vels) / len(neighbor_vels)
+
+                # Remove if velocity < 25% of neighbor average AND
+                # confidence < 0.4 (low certainty that a real note exists)
+                if curr_vel < avg_neighbor * 0.25 and curr_conf < 0.4:
                     keep2[i] = False
                     ghost_removed += 1
+
             notes = [n for i, n in enumerate(notes) if keep2[i]]
             if ghost_removed > 0:
                 print(f"[NoteTranscription] Ghost notes removed: {ghost_removed}")
@@ -1014,19 +1115,19 @@ def detect_techniques(notes: List[Dict]) -> List[Dict]:
     - natural_harmonic: ナチュラルハーモニクス (N.H.)
     - tapping_harmonic: タッピング・ハーモニクス (T.H.)
     - palm_mute: パームミュート (P.M.)
-    - palm_hit: パーム奏法 (P.H.) — ブリッジ付近を叩くバスドラム的低音
-    - nail_attack: ネイルアタック (N.A.) — 爪で弦を叩くスネア的アクセント
-    - attack_mute: アタックミュート (A.M.) — 叩きながらミュート
+    - palm_hit: パーム奏法 (P.H.) -- ブリッジ付近を叩くバスドラム的低音
+    - nail_attack: ネイルアタック (N.A.) -- 爪で弦を叩くスネア的アクセント
+    - attack_mute: アタックミュート (A.M.) -- 叩きながらミュート
     - mute_brush: ブラッシング/ミュート (X)
     - ghost_note: ゴーストノート ((n))
     - let_ring: レットリング
     - accent: アクセント (>)
-    - staccato: スタッカート (·)
+    - staccato: スタッカート (.)
     - tremolo: トレモロピッキング
     - tapping: タッピング (T)
-    - slap: スラップ (S) — 親指で低音弦を叩く
+    - slap: スラップ (S) -- 親指で低音弦を叩く
     - arpeggio: アルペジオ
-    - strumming: ストローク — ダイナミックに和音をかき鳴らす
+    - strumming: ストローク -- ダイナミックに和音をかき鳴らす
     """
     if len(notes) < 1:
         return notes
@@ -1133,21 +1234,21 @@ def detect_techniques(notes: List[Dict]) -> List[Dict]:
         if gap < 0.030 and gap > -0.05:  # わずかなオーバーラップも許容
             
             if abs_diff == 0:
-                # 同一ピッチの高速反復 → 候補としてマーク
+                # 同一ピッチの高速反復 -> 候補としてマーク
                 pass
             elif 1 <= abs_diff <= 5:
                 # 近い音程: H/P
                 if pitch_diff > 0:
-                    # 上行 → ハンマリングオン
+                    # 上行 -> ハンマリングオン
                     curr["techniques"].append("hammer_on")
                     nxt["techniques"].append({"type": "hammer_on_target", "from_pitch": curr["midi_pitch"]})
                 else:
-                    # 下行 → プルオフ
+                    # 下行 -> プルオフ
                     curr["techniques"].append("pull_off")
                     nxt["techniques"].append({"type": "pull_off_target", "from_pitch": curr["midi_pitch"]})
             
             elif 5 < abs_diff <= 12:
-                # やや離れた音程でレガート → スライド
+                # やや離れた音程でレガート -> スライド
                 if pitch_diff > 0:
                     curr["techniques"].append("slide_up")
                     nxt["techniques"].append({"type": "slide_target", "direction": "up"})
@@ -1176,7 +1277,7 @@ def detect_techniques(notes: List[Dict]) -> List[Dict]:
             nxt_dur = nxt["end_time"] - nxt["start_time"]
             curr_dur = curr["end_time"] - curr["start_time"]
             if nxt_dur < curr_dur * 0.5 or nxt_dur < 0.1:
-                # ベンドアップ→リリース
+                # ベンドアップ->リリース
                 curr["techniques"].append({
                     "type": "bend",
                     "alter": pitch_diff * 0.5,  # 半音=0.5, 全音=1.0
@@ -1249,7 +1350,7 @@ def detect_techniques(notes: List[Dict]) -> List[Dict]:
     # 長いノートで confidence の変動がある場合にビブラートの可能性
     for note in notes:
         dur = note["end_time"] - note["start_time"]
-        # 長めの音符 + 中〜高confidence → ビブラート候補
+        # 長めの音符 + 中〜高confidence -> ビブラート候補
         if dur > 0.5 and note["confidence"] > 0.4 and note["velocity"] > 50:
             # ロングトーンでのビブラートは非常に一般的
             if "let_ring" not in note["techniques"]:

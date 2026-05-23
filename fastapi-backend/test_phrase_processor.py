@@ -1,5 +1,5 @@
 """
-NextChord Unit Tests — phrase_processor.py
+NextChord Unit Tests -- phrase_processor.py
 ==========================================
 日本語フレーズ分割処理のユニットテスト。
 

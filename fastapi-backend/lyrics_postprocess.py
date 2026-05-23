@@ -1,5 +1,5 @@
 """
-lyrics_postprocess.py — Whisper日本語歌詞の後処理
+lyrics_postprocess.py -- Whisper日本語歌詞の後処理
 
 Whisperの出力にありがちな日本語誤認識パターンを修正する。
 音楽の歌詞に特化した補正ロジック。
@@ -19,12 +19,12 @@ def postprocess_japanese_lyrics(text: str) -> str:
     result = text
 
     # === 1. 全角/半角の統一 ===
-    # 半角カタカナ → 全角カタカナ
+    # 半角カタカナ -> 全角カタカナ
     result = unicodedata.normalize('NFKC', result)
 
     # === 2. 不要な空白の除去 ===
     # 日本語文字間の不要なスペースを除去（英単語間のスペースは保持）
-    result = re.sub(r'(?<=[ぁ-んァ-ヶー一-龥])\s+(?=[ぁ-んァ-ヶー一-龥])', '', result)
+    result = re.sub(r'(?<=[ぁ-んァ-ヶー一-])\s+(?=[ぁ-んァ-ヶー一-])', '', result)
 
     # === 3. Whisperのよくある誤認識パターン修正 ===
     _corrections = {
@@ -45,12 +45,12 @@ def postprocess_japanese_lyrics(text: str) -> str:
             result = result.replace(wrong, correct)
 
     # === 4. 繰り返し検出 ===
-    # 同じ文字が4回以上連続する場合は2回に制限（「ああああ」→「ああ」）
+    # 同じ文字が4回以上連続する場合は2回に制限（「ああああ」->「ああ」）
     # ただし「ー」（長音）は許可
     result = re.sub(r'([^ー])\1{3,}', r'\1\1', result)
 
     # === 5. 句読点の統一 ===
-    # 全角ピリオド → 句点（歌詞ではあまり使わないが統一）
+    # 全角ピリオド -> 句点（歌詞ではあまり使わないが統一）
     result = result.replace('．', '。')
     result = result.replace('，', '、')
 
@@ -159,6 +159,6 @@ if __name__ == "__main__":
     for t in test_cases:
         result = postprocess_japanese_lyrics(t)
         if result != t:
-            print(f"  ✅ [{t}] → [{result}]")
+            print(f"  [OK] [{t}] -> [{result}]")
         else:
             print(f"  ○ [{t}] (変更なし)")

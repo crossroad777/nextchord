@@ -1,5 +1,5 @@
 """
-NextChord Unit Tests — chord_processing.py
+NextChord Unit Tests -- chord_processing.py
 ==========================================
 コード処理・キー推定・キーコンセンサスのユニットテスト。
 
@@ -101,14 +101,14 @@ class TestStandardizedKey:
 
 class TestNormalizeChordsToKey:
     def test_enharmonic_sharp_key(self):
-        """シャープ系キーではフラット→シャープに変換"""
+        """シャープ系キーではフラット->シャープに変換"""
         chords = ["Db", "Eb", "Gb", "Ab", "Bb"]
         result = _normalize_chords_to_key(chords, "D major")
         assert "C#" in result
         assert "D#" in result or "Eb" not in result  # Ebは変換されるべき
     
     def test_enharmonic_flat_key(self):
-        """フラット系キーではシャープ→フラットに変換"""
+        """フラット系キーではシャープ->フラットに変換"""
         chords = ["C#", "D#", "F#", "G#", "A#"]
         result = _normalize_chords_to_key(chords, "F major")
         assert "Db" in result
@@ -116,10 +116,10 @@ class TestNormalizeChordsToKey:
     
     def test_chattering_removal(self):
         """1拍だけの異なるコードを除去（チャタリング除去）"""
-        # G G Am G G → G G G G G (Amが1拍だけ)
+        # G G Am G G -> G G G G G (Amが1拍だけ)
         chords = ["G", "G", "Am", "G", "G"]
         result = _normalize_chords_to_key(chords, "G major")
-        assert result[2] == "G"  # Am→G に修正
+        assert result[2] == "G"  # Am->G に修正
     
     def test_nc_preserved(self):
         """N.C.はそのまま保持"""
@@ -129,7 +129,7 @@ class TestNormalizeChordsToKey:
     
     def test_rare_chord_merge(self):
         """レアコード(2%未満)は類似する多数派コードに統合"""
-        # Gmが1回、Gが10回 → Gmは出現率が低いのでGに統合
+        # Gmが1回、Gが10回 -> Gmは出現率が低いのでGに統合
         chords = ["G", "G", "G", "G", "G", "G", "G", "G", "G", "G", "Gm"]
         result = _normalize_chords_to_key(chords, "G major")
         # Gmは単独ではないのでマージされる可能性
@@ -186,10 +186,10 @@ class TestKeyConsensus:
         assert "consensus" in method
     
     def test_all_disagree(self):
-        """全手法不一致 → chromaを採用"""
+        """全手法不一致 -> chromaを採用"""
         # C, F#, B は五度圏で十分離れている
         key, method = key_consensus("C major", "F# major", "B major")
-        # F# → B は five-distance 1 で近い
+        # F# -> B は five-distance 1 で近い
         # なので consensus-chroma+chord になるか…実際の動作に合わせる
         assert key == "F# major"  # chromaが関与するパターンではchromaが選ばれる
 
@@ -209,17 +209,17 @@ class TestKeyHelpers:
         assert _key_mode("A minor") == "minor"
     
     def test_fifth_distance(self):
-        # C→G = 1 (隣接)
+        # C->G = 1 (隣接)
         assert _fifth_distance(0, 7) == 1
-        # C→F = 1
+        # C->F = 1
         assert _fifth_distance(0, 5) == 1
-        # C→F# = 6 (最大距離)
+        # C->F# = 6 (最大距離)
         assert _fifth_distance(0, 6) == 6
     
     def test_relative_semi(self):
-        # A minor → C major
+        # A minor -> C major
         assert _relative_semi(9, "minor") == 0  # A(9) + 3 = C(0)
-        # C major → A minor
+        # C major -> A minor
         assert _relative_semi(0, "major") == 9  # C(0) - 3 = A(9)
     
     def test_keys_near(self):

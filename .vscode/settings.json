@@ -1,0 +1,16 @@
+{
+    "python.analysis.exclude": [
+        "uploads/**",
+        "venv312/**",
+        "node_modules/**",
+        "**/htdemucs/**",
+        "**/__pycache__/**"
+    ],
+    "files.watcherExclude": {
+        "uploads/**": true,
+        "venv312/**": true,
+        "**/node_modules/**": true,
+        "**/__pycache__/**": true,
+        "**/htdemucs/**": true
+    }
+}

@@ -263,7 +263,7 @@ def create_pdf(structured_data, output_path, title="Chord Sheet",
             c.roundRect(margin, y - section_h + 1*mm, usable_width, section_h, 2*mm, fill=1, stroke=0)
             c.setFillColor(_PDF_COLORS["section"])
             c.setFont("Helvetica-Bold", 10)
-            c.drawString(margin + 3*mm, y - section_h + 3*mm, f"▎ {section}")
+            c.drawString(margin + 3*mm, y - section_h + 3*mm, f"| {section}")
             y -= section_h + 3*mm
             current_section = section
         

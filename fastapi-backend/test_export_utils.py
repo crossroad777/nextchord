@@ -1,5 +1,5 @@
 """
-NextChord Unit Tests — export_utils.py
+NextChord Unit Tests -- export_utils.py
 ======================================
 MIDI/PDF/テキストエクスポートのユニットテスト。
 

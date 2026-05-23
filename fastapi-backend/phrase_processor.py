@@ -1,5 +1,5 @@
 """
-phrase_processor.py — Janome形態素解析による日本語歌詞フレーズ処理
+phrase_processor.py -- Janome形態素解析による日本語歌詞フレーズ処理
 
 Whisperの出力フレーズを自然な日本語の単語境界で結合・分割し、
 テキストビュー表示用のフレーズリストを生成する。
@@ -272,7 +272,7 @@ if __name__ == "__main__":
     for i, r in enumerate(result):
         t = r["text"]
         if t.startswith("さ") and len(t) > 1 and i > 0:
-            print(f"  ⚠ Line[{i}] 「さ」始まり: {t}")
+            print(f"  [WARN] Line[{i}] 「さ」始まり: {t}")
         if t.endswith("この") or t.endswith("その"):
-            print(f"  ⚠ Line[{i}] 連体詞で終わる: {t}")
+            print(f"  [WARN] Line[{i}] 連体詞で終わる: {t}")
     print("チェック完了")

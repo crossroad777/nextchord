@@ -1,0 +1,25 @@
+{
+  "timestamp": "2026-05-23 13:57:36",
+  "total_tracks": 180,
+  "elapsed_seconds": 4,
+  "btc_only": {
+    "root": 0.8194,
+    "thirds": 0.7901,
+    "mirex": 0.7866,
+    "majmin": 0.7999,
+    "sevenths": 0.6973
+  },
+  "btc_hmm": {
+    "root": 0.8194,
+    "thirds": 0.7901,
+    "mirex": 0.7866,
+    "majmin": 0.7999,
+    "sevenths": 0.6973
+  },
+  "btc_paper_reference": {
+    "thirds": 0.86,
+    "root": 0.9
+  },
+  "improved": 0,
+  "degraded": 0
+}

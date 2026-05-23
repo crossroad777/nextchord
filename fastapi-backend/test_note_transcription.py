@@ -1,5 +1,5 @@
 """
-NextChord Unit Tests — note_transcription.py
+NextChord Unit Tests -- note_transcription.py
 =============================================
 ノート検出・フィルタリングのユニットテスト。
 
@@ -96,7 +96,7 @@ class TestRemoveOverlappingNotes:
         """同一ピッチの連続ノートをマージ"""
         notes = [
             _make_note(0.0, 0.5, pitch=60),
-            _make_note(0.52, 1.0, pitch=60),  # 30ms以内 → マージ
+            _make_note(0.52, 1.0, pitch=60),  # 30ms以内 -> マージ
         ]
         result = _remove_overlapping_notes(notes)
         assert len(result) == 1
@@ -118,7 +118,7 @@ class TestRemoveOverlappingNotes:
     
     def test_higher_confidence_replaces(self):
         """高信頼度のノートが低信頼度のノートを置き換える"""
-        # 6ノートでいっぱい → 7番目は高信頼度
+        # 6ノートでいっぱい -> 7番目は高信頼度
         notes = [
             _make_note(0.0, 1.0, pitch=40 + i, confidence=0.3)
             for i in range(6)

@@ -31,7 +31,7 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
                 endTime: last.time + last.duration
             });
         }
-    }, [data, bars.length]);
+    }, [data]);
 
     // 自動スクロール: アクティブなビートが見えるようにスクロール
     useEffect(() => {
@@ -83,15 +83,15 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
                 const sectionLabel = firstBeat?.section;
 
                 const getSectionColor = (label) => {
-                    const defaultStyle = { bg: "bg-slate-50", border: "border-slate-100", text: "text-slate-400" };
+                    const defaultStyle = { bg: "bg-[var(--nc-surface-2)]", border: "border-[var(--nc-border)]", text: "text-[var(--nc-text-muted)]" };
                     if (!label) return defaultStyle;
                     const l = label.toLowerCase();
-                    // 高級感のある音楽的なパレット
-                    if (l.includes("chorus") || l.includes("サビ")) return { bg: "bg-rose-50", border: "border-rose-100", text: "text-rose-500" };
-                    if (l.includes("verse") || l.includes("メロ")) return { bg: "bg-indigo-50", border: "border-indigo-100", text: "text-indigo-500" };
-                    if (l.includes("intro")) return { bg: "bg-amber-50", border: "border-amber-100", text: "text-amber-600" };
-                    if (l.includes("bridge") || l.includes("間奏")) return { bg: "bg-teal-50", border: "border-teal-100", text: "text-teal-600" };
-                    if (l.includes("outro")) return { bg: "bg-slate-100", border: "border-slate-200", text: "text-slate-500" };
+                    // Musical section color palette using design system tokens
+                    if (l.includes("chorus") || l.includes("サビ")) return { bg: "bg-rose-500/10", border: "border-rose-500/20", text: "text-rose-500" };
+                    if (l.includes("verse") || l.includes("メロ")) return { bg: "bg-[var(--nc-primary-soft)]", border: "border-[var(--nc-primary)]/20", text: "text-[var(--nc-primary)]" };
+                    if (l.includes("intro")) return { bg: "bg-amber-500/10", border: "border-amber-500/20", text: "text-amber-500" };
+                    if (l.includes("bridge") || l.includes("間奏")) return { bg: "bg-teal-500/10", border: "border-teal-500/20", text: "text-teal-500" };
+                    if (l.includes("outro")) return { bg: "bg-[var(--nc-surface-3)]", border: "border-[var(--nc-border-hover)]", text: "text-[var(--nc-text-muted)]" };
                     return defaultStyle;
                 };
 
@@ -108,7 +108,7 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
                                     {sectionLabel}
                                 </div>
                             )}
-                            <span className="text-[10px] font-black text-slate-300 italic">BAR {barNum}</span>
+                            <span className="text-[10px] font-black text-[var(--nc-text-ghost)] italic">BAR {barNum}</span>
                         </div>
 
                         {/* Bar Container */}
@@ -137,8 +137,8 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
                                             ${isActive
                                                 ? "bg-gradient-to-br from-[#0d9488] to-[#0f172a] border-[#0d9488] shadow-2xl scale-[1.02] z-10"
                                                 : isEdited
-                                                    ? "bg-amber-50 border-amber-200 hover:border-amber-300 hover:shadow-md"
-                                                    : "bg-white border-slate-100 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-500/5"
+                                                    ? "bg-amber-500/10 border-amber-500/20 hover:border-amber-500/30 hover:shadow-md"
+                                                    : "bg-[var(--nc-surface)] border-[var(--nc-border)] hover:border-[var(--nc-primary)]/20 hover:shadow-lg hover:shadow-[var(--nc-primary)]/5"
                                             }
                                         `}
                                     >
@@ -151,22 +151,22 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
                                                 onKeyDown={handleKeyDown}
                                                 onBlur={handleEditConfirm}
                                                 autoFocus
-                                                className="text-2xl font-black text-center bg-white border-2 border-indigo-500 rounded-xl px-2 py-1 outline-none shadow-xl"
+                                                className="text-2xl font-black text-center bg-[var(--nc-surface)] text-[var(--nc-text)] border-2 border-[var(--nc-primary)] rounded-xl px-2 py-1 outline-none shadow-xl"
                                                 onClick={(e) => e.stopPropagation()}
                                             />
                                         ) : (
                                             <>
                                                 {/* コード名 - 大きく目立つ */}
-                                                <div className={`text-4xl font-black tracking-tighter leading-none ${isActive ? "text-white" : isEdited ? "text-amber-700" : "text-slate-900"}`}>
+                                                <div className={`text-4xl font-black tracking-tighter leading-none ${isActive ? "text-white" : isEdited ? "text-amber-500" : "text-[var(--nc-text)]"}`}>
                                                     {shouldShowChord && !isRest ? displayChord : ""}
                                                     {!shouldShowChord && !isRest && (
-                                                        <span className={`text-xl opacity-20 ${isActive ? "text-white" : "text-slate-200"}`}>・</span>
+                                                        <span className={`text-xl opacity-20 ${isActive ? "text-white" : "text-[var(--nc-text-ghost)]"}`}>・</span>
                                                     )}
                                                 </div>
 
                                                 {/* 編集済みマーク */}
                                                 {isEdited && !isActive && (
-                                                    <div className="absolute top-2 right-2 text-[8px] font-black text-amber-500 bg-amber-100/50 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                                                    <div className="absolute top-2 right-2 text-[8px] font-black text-amber-500 bg-amber-500/15 px-2 py-0.5 rounded-full uppercase tracking-widest">
                                                         Edited
                                                     </div>
                                                 )}
@@ -175,14 +175,14 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
 
                                         {/* 歌詞 - コードの直下に大きく表示 */}
                                         {beat.lyric && !isEditing && (
-                                            <div className={`text-lg font-bold mt-3 leading-tight tracking-tight ${isActive ? "text-white/90" : "text-indigo-500/80"}`}>
+                                            <div className={`text-lg font-bold mt-3 leading-tight tracking-tight ${isActive ? "text-white/90" : "text-[var(--nc-primary)]/80"}`}>
                                                 {beat.lyric}
                                             </div>
                                         )}
 
                                         {/* 休符記号 - コードも歌詞もない場合のみ表示 */}
                                         {isRest && !beat.lyric && !isEditing && (
-                                            <div className={`flex items-center justify-center flex-1 ${isActive ? "text-white/30" : "text-slate-100"}`}>
+                                            <div className={`flex items-center justify-center flex-1 ${isActive ? "text-white/30" : "text-[var(--nc-text-ghost)]"}`}>
                                                 <span className="text-4xl font-light opacity-50">—</span>
                                             </div>
                                         )}
@@ -196,7 +196,7 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
 
                                         {/* ダブルクリックヒント */}
                                         {!isEditing && !isActive && (
-                                            <div className="absolute bottom-2 left-3 text-[7px] font-black text-slate-300 opacity-0 group-hover:opacity-100 transition-all uppercase tracking-widest">
+                                            <div className="absolute bottom-2 left-3 text-[7px] font-black text-[var(--nc-text-ghost)] opacity-0 group-hover:opacity-100 transition-all uppercase tracking-widest">
                                                 Double click to edit
                                             </div>
                                         )}

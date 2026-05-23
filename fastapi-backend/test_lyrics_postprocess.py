@@ -1,5 +1,5 @@
 """
-NextChord Unit Tests — lyrics_postprocess.py
+NextChord Unit Tests -- lyrics_postprocess.py
 =============================================
 歌詞後処理のユニットテスト。
 
@@ -37,7 +37,7 @@ class TestPostprocessJapaneseLyrics:
         assert postprocess_japanese_lyrics("遠回りしてたどり着くから") == "遠回りしてたどり着くから"
 
     def test_unicode_normalize(self):
-        """半角カタカナ → 全角カタカナ"""
+        """半角カタカナ -> 全角カタカナ"""
         assert "ア" in postprocess_japanese_lyrics("ｱ")
 
     def test_remove_jp_spaces(self):
@@ -72,7 +72,7 @@ class TestPostprocessJapaneseLyrics:
     def test_punctuation_normalize(self):
         """全角ピリオドはNFKCで半角ピリオドに変換される"""
         result = postprocess_japanese_lyrics("こんにちは．世界")
-        # NFKC正規化が先に適用され '．' → '.'
+        # NFKC正規化が先に適用され '．' -> '.'
         assert "." in result or "。" in result
 
 
@@ -101,7 +101,7 @@ class TestPostprocessWhisperSegments:
         """空テキストのセグメントは除去"""
         segments = [
             {"text": "こんにちは", "start": 0.0, "end": 1.0},
-            {"text": "作詞・作曲", "start": 5.0, "end": 6.0},  # → 空になる
+            {"text": "作詞・作曲", "start": 5.0, "end": 6.0},  # -> 空になる
         ]
         result = postprocess_whisper_segments(segments)
         assert len(result) == 1

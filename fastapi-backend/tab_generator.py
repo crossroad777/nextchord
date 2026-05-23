@@ -1,11 +1,11 @@
 """
-Tab Generator Module — Solo Guitar Precision Edition
+Tab Generator Module -- Solo Guitar Precision Edition
 =====================================================
 ノートイベントデータからTab譜データおよびMusicXMLを生成する。
 
 機能:
-1. メロディTab: ノート→ギターフレット位置変換（ポジション最適化付き）
-2. コードTab: コード名→標準ボイシングのTab表記
+1. メロディTab: ノート->ギターフレット位置変換（ポジション最適化付き）
+2. コードTab: コード名->標準ボイシングのTab表記
 3. MusicXML: 五線譜+Tab譜の2段構成MusicXML生成
    - Part 1 (Melody): 五線譜でメロディ + コード記号
    - Part 2 (Guitar TAB): 実際の転記ノートをTAB譜で表示
@@ -14,9 +14,21 @@ Tab Generator Module — Solo Guitar Precision Edition
 
 import math
 import json
+import numpy as np
 from typing import List, Dict, Optional, Tuple
 from xml.etree.ElementTree import Element, SubElement, tostring
 from xml.dom import minidom
+
+# =========================================================================
+# T-4: ビートグリッドスナップ (16分音符 / 3連符)
+# =========================================================================
+STRAIGHT_GRID = [0, 3, 6, 9, 12]   # divisions=12 の 16分グリッド
+TRIPLET_GRID  = [0, 4, 8, 12]      # 3連符グリッド
+
+def snap_to_grid(val, divisions=12):
+    """val を 16分音符 / 3連符グリッドに最寄りスナップする"""
+    candidates = STRAIGHT_GRID + TRIPLET_GRID
+    return min(candidates, key=lambda x: abs(x - (val % divisions))) + (val // divisions) * divisions
 
 # =========================================================================
 # ギター標準チューニング (弦番号: 6=最低音, 1=最高音)
@@ -113,7 +125,7 @@ CHORD_VOICINGS = {
     "Eaug": [0, 3, 2, 1, 1, 0],
 }
 
-# キー → 調号の#/b数 (正=シャープ, 負=フラット)
+# キー -> 調号の#/b数 (正=シャープ, 負=フラット)
 KEY_SIGNATURES = {
     "C": 0, "G": 1, "D": 2, "A": 3, "E": 4, "B": 5, "F#": 6, "Gb": -6,
     "F": -1, "Bb": -2, "Eb": -3, "Ab": -4, "Db": -5, "Cb": -7,
@@ -197,6 +209,50 @@ def midi_to_guitar_position(
     return candidates[0]
 
 
+def _convert_technique_field(note: dict) -> list:
+    """technique.py output ('technique': 'h') -> tab_generator format ('techniques': ['hammer_on'])"""
+    # If already has techniques list, use it
+    existing = note.get("techniques", [])
+    if existing:
+        return existing
+    
+    tech = note.get("technique", "")
+    if not tech or tech == "normal":
+        return []
+    
+    # Map technique.py short codes to MusicXML technique names
+    TECH_MAP = {
+        "h": "hammer_on",
+        "p": "pull_off",
+        "/": "slide_up",
+        "\\": "slide_down",
+        "b": "bend",
+        "b_half": "bend",
+        "b_1half": "bend",
+        "b_2": "bend",
+        "~": "vibrato",
+        "gliss_up": "slide_up",
+        "gliss_down": "slide_down",
+        "harmonic": "natural_harmonic",
+        "pm": "palm_mute",
+        "tr": "trill",
+    }
+    
+    mapped = TECH_MAP.get(tech)
+    if mapped:
+        if mapped == "bend":
+            # Bend amount mapping
+            amounts = {"b_half": 0.5, "b": 1.0, "b_1half": 1.5, "b_2": 2.0}
+            return [{"type": "bend", "amount": amounts.get(tech, 1.0)}]
+        return [mapped]
+    
+    # Direct passthrough for techniques that tab_generator checks by name
+    if tech in ("mute_brush", "ghost_note", "x"):
+        return [tech]
+    
+    return []
+
+
 def notes_to_tab_data(
     notes: List[Dict],
     beats: List[float] = None,
@@ -204,11 +260,45 @@ def notes_to_tab_data(
 ) -> List[Dict]:
     """
     ノートイベントをTab譜データに変換する。
-    同時発音（和音）を検出し、弦の競合を回避する。
+    Viterbi DP最適化（string_optimizer）を試行し、
+    import失敗時はグリーディヒューリスティックにフォールバック。
     """
     if tuning is None:
         tuning = STANDARD_TUNING
 
+    # --- Viterbi DP 最適化を試行 ---
+    try:
+        from string_optimizer import optimize_string_assignment
+
+        # tuning を list 形式に変換 (string_optimizer は [6弦,5弦,...,1弦] のリスト)
+        if isinstance(tuning, dict):
+            tuning_list = [tuning[s] for s in range(6, 0, -1)]
+        else:
+            tuning_list = list(tuning)
+
+        optimized = optimize_string_assignment(notes, tuning=tuning_list, capo=0)
+
+        tab_data = []
+        for note in optimized:
+            tab_data.append({
+                "time": note["start_time"],
+                "duration": round(note["end_time"] - note["start_time"], 4),
+                "string": note["string"],
+                "fret": note["fret"],
+                "midi_pitch": note["midi_pitch"],
+                "note_name": note["note_name"],
+                "velocity": note.get("velocity", 80),
+                "techniques": _convert_technique_field(note),
+                "bar": note.get("bar"),
+                "beat": note.get("beat"),
+            })
+        print(f"[TabGen] Viterbi DP string optimization applied ({len(tab_data)} notes)")
+        return tab_data
+
+    except Exception as e:
+        print(f"[TabGen] string_optimizer unavailable, using greedy fallback: {e}")
+
+    # --- フォールバック: 従来のグリーディ割り当て ---
     tab_data = []
     prev_positions = []
 
@@ -244,7 +334,7 @@ def notes_to_tab_data(
                 "midi_pitch": note["midi_pitch"],
                 "note_name": note["note_name"],
                 "velocity": note.get("velocity", 80),
-                "techniques": note.get("techniques", []),
+                "techniques": _convert_technique_field(note),
                 "bar": note.get("bar"),
                 "beat": note.get("beat"),
             })
@@ -293,7 +383,7 @@ def chord_to_tab_data(chord_name: str) -> Optional[List[int]]:
         return CHORD_VOICINGS[clean]
 
     # 末尾の修飾を段階的に除去して検索
-    # 例: "Gadd9" → "G", "Am7" → "Am" → "A"
+    # 例: "Gadd9" -> "G", "Am7" -> "Am" -> "A"
     variants = [clean]
     # sus, add, dim, aug の除去
     for suffix in ["add9", "add11", "sus4", "sus2", "aug", "dim"]:
@@ -451,14 +541,14 @@ def generate_chord_strum_notes(
     """
     検出済みコード進行からギターストロークパターンのノートイベントを生成する。
     
-    弾き語りスタイル: 各ビートでコードボイシングを8分音符2つ (down-up) として生成。
-    Down strum: 全弦 (低音から)
-    Up strum: 上4弦 (高音側)
+    ズンチャパターン（4/4）:
+      Beat 1: ダウンストローク（全弦、強）
+      Beat 2: ミュートストローク（ブラッシング、X表記）
+      Beat 3: ダウンストローク（全弦、中）
+      Beat 4: ミュートストローク（ブラッシング、X表記）
     
-    Returns
-    -------
-    list of dict
-        transcribe_notes と同じフォーマットの note events
+    各ビートで8分音符2つ (down + up) を生成。
+    偶数拍（2,4）のダウンストロークをミュートブラッシングにする。
     """
     beat_duration = 60.0 / bpm
     eighth_duration = beat_duration / 2
@@ -469,6 +559,7 @@ def generate_chord_strum_notes(
     for entry in structured_data:
         chord_name = entry.get("chord", "N.C.")
         beat_time = entry.get("time", 0.0)
+        beat_in_bar = entry.get("beat", 1)  # 1-indexed beat within measure
         
         if chord_name == "N.C." or not chord_name:
             continue
@@ -477,10 +568,17 @@ def generate_chord_strum_notes(
         if voicing is None:
             continue
         
+        # ズンチャパターン: 偶数拍（2,4）はミュートブラッシング
+        is_muted_beat = (beat_in_bar % 2 == 0)
+        
         # 各ビートで 2つの8分音符 (down + up strum)
         for sub in range(2):
             strum_time = beat_time + sub * eighth_duration
-            dur = eighth_duration * 0.9  # 少し短めにしてスタッカート感
+            dur = eighth_duration * 0.8  # 少しスタッカート
+            
+            # ミュートビートの場合: 短いduration（ブラッシング感）
+            if is_muted_beat:
+                dur = eighth_duration * 0.3  # 短くカット
             
             # Down strum (sub=0): 全弦, Up strum (sub=1): 上4弦
             if sub == 0:
@@ -488,9 +586,15 @@ def generate_chord_strum_notes(
             else:
                 strings_to_play = range(2, 6)  # 4弦〜1弦 (up strum)
             
+            # Velocity: 強拍>弱拍、ダウン>アップ
+            if is_muted_beat:
+                vel = 45 if sub == 0 else 35  # ミュートは弱く
+            else:
+                vel = 80 if sub == 0 else 55  # 通常は強く
+            
             for str_idx in strings_to_play:
                 fret = voicing[str_idx]
-                if fret < 0:  # ミュート
+                if fret < 0:  # ミュート弦
                     continue
                 
                 string_num = 6 - str_idx  # voicing[0]=6弦, voicing[5]=1弦
@@ -499,22 +603,29 @@ def generate_chord_strum_notes(
                 
                 note_name = NOTE_NAMES[midi_pitch % 12] + str((midi_pitch // 12) - 1)
                 
-                notes.append({
+                note = {
                     "start_time": round(strum_time, 4),
                     "end_time": round(strum_time + dur, 4),
                     "midi_pitch": midi_pitch,
-                    "velocity": 75 if sub == 0 else 60,  # down stronger
+                    "velocity": vel,
                     "confidence": 0.95,
                     "note_name": note_name,
                     "frequency": round(440.0 * (2 ** ((midi_pitch - 69) / 12)), 2),
                     "techniques": [],
-                    "bar": entry.get("bar", None),  # structured_dataのbar番号(1-indexed)
-                    "beat": entry.get("beat", None),  # structured_dataのbeat番号(1-indexed)
-                })
+                    "bar": entry.get("bar", None),
+                    "beat": entry.get("beat", None),
+                }
+                
+                # ミュートビートのダウンストロークにブラッシング付与
+                if is_muted_beat and sub == 0:
+                    note["technique"] = "mute_brush"
+                
+                notes.append(note)
     
     notes.sort(key=lambda n: (n["start_time"], n["midi_pitch"]))
     
-    print(f"[ChordStrum] Generated {len(notes)} strum notes from {len(structured_data)} beats")
+    brush_count = sum(1 for n in notes if n.get("technique") == "mute_brush")
+    print(f"[ChordStrum] Generated {len(notes)} strum notes from {len(structured_data)} beats ({brush_count} muted)")
     return notes
 
 
@@ -565,7 +676,7 @@ def quantize_duration_to_note_type(
         (0.625, 0.875, "eighth", 9,  True),
         # 8分
         (0.4375, 0.625, "eighth", 6, False),
-        # 8分三連符  (ratio ≈ 1/3 ≈ 0.333)
+        # 8分三連符  (ratio ~= 1/3 ~= 0.333)
         (0.29, 0.4375, "eighth", 4,  False),  # triplet: 12/3=4
         # 付点16分
         (0.21875, 0.29, "16th",  4,  True),
@@ -583,7 +694,7 @@ def quantize_duration_to_note_type(
 
 
 # =========================================================================
-# MusicXML 生成 — ソロギター精密版
+# MusicXML 生成 -- ソロギター精密版
 # =========================================================================
 def notes_to_musicxml(
     notes: List[Dict],
@@ -675,7 +786,7 @@ def notes_to_musicxml(
         for lyr in lyrics:
             # lyr = (bar, beat, start, end, text)
             if len(lyr) >= 5:
-                m_num = lyr[0] + 1  # 0-indexed → 1-indexed
+                m_num = lyr[0] + 1  # 0-indexed -> 1-indexed
                 beat_pos = lyr[1]   # 0-indexed beat within measure
                 if m_num not in lyric_measures:
                     lyric_measures[m_num] = []
@@ -704,13 +815,13 @@ def notes_to_musicxml(
     SubElement(scaling, "millimeters").text = "7.0"
     SubElement(scaling, "tenths").text = "40"
     staff_layout = SubElement(defaults, "staff-layout")
-    SubElement(staff_layout, "staff-distance").text = "80"
+    SubElement(staff_layout, "staff-distance").text = "150"
     system_layout = SubElement(defaults, "system-layout")
     system_margins = SubElement(system_layout, "system-margins")
     SubElement(system_margins, "left-margin").text = "0"
     SubElement(system_margins, "right-margin").text = "0"
-    SubElement(system_layout, "system-distance").text = "120"
-    SubElement(system_layout, "top-system-distance").text = "40"
+    SubElement(system_layout, "system-distance").text = "200"
+    SubElement(system_layout, "top-system-distance").text = "60"
 
     part_list = SubElement(score, "part-list")
 
@@ -781,14 +892,14 @@ def notes_to_musicxml(
                 prev_chord_name = _build_melody_measure(
                     measure, m_num, note_measures, chord_measures, lyric_measures,
                     note_names, beat_duration, divisions, beats_per_measure,
-                    measure_duration, measure_total_divs, prev_chord_name
+                    measure_duration, measure_total_divs, prev_chord_name, beats
                 )
             else:
                 # Part 2: Guitar TAB (転記ノートをTABで表示)
                 _build_tab_measure(
                     measure, m_num, tab_measures,
                     note_names, beat_duration, divisions, beats_per_measure,
-                    measure_duration, measure_total_divs, tuning
+                    measure_duration, measure_total_divs, tuning, beats
                 )
 
     # Final XML
@@ -818,17 +929,30 @@ def _insert_harmony_element(measure, c_name, offset_divs=None):
         SubElement(harm, "offset").text = str(int(offset_divs))
 
 
+def _insert_invisible_rest(measure, duration):
+    """空小節のスペーサー: <forward>で時間を進める（AlphaTabで何も表示しない）。
+    
+    以前は print-object="no" の <rest> ノートを使用していたが、
+    AlphaTabがこの属性を無視して赤い四角を表示し、さらにMIDI再生にも
+    悪影響を及ぼしていたため <forward> に変更。
+    """
+    fwd = SubElement(measure, "forward")
+    SubElement(fwd, "duration").text = str(duration)
+    return fwd
+
+
+
 def _build_melody_measure(
     measure, m_num, note_measures, chord_measures, lyric_measures,
     note_names, beat_duration, divisions, beats_per_measure,
-    measure_duration, measure_total_divs, prev_chord_name=None
+    measure_duration, measure_total_divs, prev_chord_name=None, beats=None
 ):
     """Part 1: Melody 五線譜を構築（歌詞付き）。戻り値: この小節の最後のコード名"""
     m_notes = note_measures.get(m_num, [])
     m_chords = chord_measures.get(m_num, [])
     m_lyrics = lyric_measures.get(m_num, [])  # この小節の歌詞
 
-    # コード変化をビート位置ごとに整理 (division位置 → chord_name)
+    # コード変化をビート位置ごとに整理 (division位置 -> chord_name)
     # 同じコードが続く場合はスキップし、変化点のみ記録
     # prev_chord_name: 前の小節から引き継いだ最後のコード
     chord_at_beat = {}
@@ -848,50 +972,84 @@ def _build_melody_measure(
         _insert_harmony_element(measure, chord_at_beat[c_div], offset_divs=c_div)
 
     if not m_notes:
-        # 全休符 → <forward> で描画なし（■を消す）
-        fwd = SubElement(measure, "forward")
-        SubElement(fwd, "duration").text = str(measure_total_divs)
+        if m_lyrics:
+            # 歌詞がある場合: 正規の休符ノートに歌詞を付与
+            # ★ durationに対応する正しいtypeを使用（不一致はAlphaTabで赤四角になる）
+            for lyr in m_lyrics:
+                note_elem = SubElement(measure, "note")
+                SubElement(note_elem, "rest")
+                dur = measure_total_divs // max(len(m_lyrics), 1)
+                SubElement(note_elem, "duration").text = str(dur)
+                _nt, _dot = _divs_to_note_type(dur, divisions)
+                SubElement(note_elem, "type").text = _nt
+                if _dot:
+                    SubElement(note_elem, "dot")
+                lyric_elem = SubElement(note_elem, "lyric", number="1", **{"default-y": "-30"})
+                SubElement(lyric_elem, "syllabic").text = "single"
+                SubElement(lyric_elem, "text").text = lyr['text']
+        else:
+            _insert_invisible_rest(measure, measure_total_divs)
         return last_chord_name
 
     # ノートを時間順にソート & グループ化（同時発音）
     m_notes.sort(key=lambda n: (n["start_time"], n["midi_pitch"]))
     groups = _group_simultaneous_notes(m_notes, tolerance=0.03)
 
-    filled_divs = 0
-
+    # 各グループのdivision位置を先に計算
+    group_positions = []
     for group in groups:
         if not group:
             continue
-
-        # ノートの開始位置（小節内の相対位置）
         note_start = group[0]["start_time"]
-        note_offset_in_measure = note_start - (m_num - 1) * measure_duration
-        target_div = round(note_offset_in_measure / beat_duration * divisions)
+        # T-2: beats配列があれば正確なビート位置を計算
+        if beats is not None and len(beats) > 1:
+            beat_idx = int(np.searchsorted(beats, note_start, side='right')) - 1
+            beat_idx = max(0, beat_idx)
+            measure_first_beat = (m_num - 1) * beats_per_measure
+            beat_in_measure = beat_idx - measure_first_beat
+            if beat_idx < len(beats) - 1:
+                local_beat_dur = beats[beat_idx + 1] - beats[beat_idx]
+            else:
+                local_beat_dur = beat_duration
+            frac = (note_start - beats[beat_idx]) / local_beat_dur if local_beat_dur > 0 else 0.0
+            raw_div = (beat_in_measure + frac) * divisions
+        else:
+            note_offset_in_measure = note_start - (m_num - 1) * measure_duration
+            raw_div = note_offset_in_measure / beat_duration * divisions
+        # T-4: グリッドスナップ
+        target_div = snap_to_grid(round(raw_div), divisions)
         target_div = max(0, min(target_div, measure_total_divs - 1))
+        group_positions.append((target_div, group))
 
-        # ギャップ（前のノートとの間の休符）
-        gap = target_div - filled_divs
-        if gap > 0:
-            # ギャップ → <forward> で描画なし
-            fwd = SubElement(measure, "forward")
-            SubElement(fwd, "duration").text = str(gap)
-            filled_divs += gap
+    # グループが無い場合
+    if not group_positions:
+        _insert_invisible_rest(measure, measure_total_divs)
+        return last_chord_name
 
-        # ノートの長さ
-        avg_duration = sum(n["end_time"] - n["start_time"] for n in group) / len(group)
-        note_type, note_divs, is_dotted = quantize_duration_to_note_type(
-            avg_duration, beat_duration, divisions
-        )
+    filled_divs = 0
 
+    for g_idx, (target_div, group) in enumerate(group_positions):
+        # ギャップは作らない: ノートの長さで吸収する
+
+        # 次のグループまでの距離でノート長を決定（ギャップなし）
+        if g_idx + 1 < len(group_positions):
+            next_div = group_positions[g_idx + 1][0]
+            note_divs = next_div - filled_divs
+        else:
+            note_divs = measure_total_divs - filled_divs
+
+        if note_divs <= 0:
+            note_divs = divisions  # 最小でも1拍分
+        
         # 小節からはみ出さないようにクランプ
         remaining = measure_total_divs - filled_divs
         if note_divs > remaining:
             note_divs = remaining
-            note_type = _divs_to_note_type(note_divs, divisions)
-            is_dotted = False
-
+        
         if note_divs <= 0:
             continue
+
+        note_type, is_dotted = _divs_to_note_type(note_divs, divisions)
 
         # グループ内の各ノートを出力
         first_in_chord = True
@@ -916,32 +1074,36 @@ def _build_melody_measure(
             if is_dotted:
                 SubElement(note_elem, "dot")
 
-            # 歌詞をグループの最初のノートにのみ付与
+            # 歌詞をグループの最初のノートにのみ付与（1ノート1歌詞）
             if first_in_chord and m_lyrics:
                 note_start_time = note["start_time"]
-                # このノートの時間範囲に重なる歌詞を検索
-                matched_lyrics = []
+                # このノートに最も近い歌詞を1つだけ検索
+                best_lyr = None
+                best_dist = float('inf')
                 for lyr in m_lyrics:
-                    if abs(lyr['start'] - note_start_time) < beat_duration * 1.5:
-                        matched_lyrics.append(lyr['text'])
-                if matched_lyrics:
-                    lyric_text = " ".join(matched_lyrics)
-                    lyric_elem = SubElement(note_elem, "lyric", number="1", **{"default-y": "-80"})
+                    dist = abs(lyr['start'] - note_start_time)
+                    if dist < best_dist and dist < beat_duration * 0.8:
+                        best_dist = dist
+                        best_lyr = lyr
+                if best_lyr:
+                    lyric_elem = SubElement(note_elem, "lyric", number="1", **{"default-y": "-30"})
                     SubElement(lyric_elem, "syllabic").text = "single"
-                    SubElement(lyric_elem, "text").text = lyric_text
-                    # 使用済みの歌詞を削除
-                    m_lyrics = [l for l in m_lyrics if l['text'] not in matched_lyrics]
+                    SubElement(lyric_elem, "text").text = best_lyr['text']
+                    m_lyrics = [l for l in m_lyrics if l is not best_lyr]
 
 
             first_in_chord = False
 
         filled_divs += note_divs
 
-    # 小節末尾の余り → <forward> で描画なし
-    remaining = measure_total_divs - filled_divs
-    if remaining > 0:
-        fwd = SubElement(measure, "forward")
-        SubElement(fwd, "duration").text = str(remaining)
+    # 小節内で未割り当ての歌詞がある場合、歌詞がないノートに順番に分配
+    if m_lyrics:
+        note_elems = [ne for ne in measure.findall("note") if ne.find("chord") is None and ne.find("lyric") is None]
+        for i, lyr in enumerate(m_lyrics):
+            if i < len(note_elems):
+                lyric_elem = SubElement(note_elems[i], "lyric", number="1", **{"default-y": "-30"})
+                SubElement(lyric_elem, "syllabic").text = "single"
+                SubElement(lyric_elem, "text").text = lyr['text']
 
     return last_chord_name
 
@@ -970,20 +1132,36 @@ def _get_technique(techniques: list, name: str):
     return None
 
 
-def _add_technique_notations(note_elem, notations, tech, techniques):
+def _add_technique_notations(note_elem, notations, tech, techniques, measure_elem=None):
     """
-    テクニック記号をMusicXMLに出力する。
+    Add technique symbols to MusicXML output.
     
-    MusicXMLの構造:
+    MusicXML structure:
     <notations>
       <technical>
-        <hammer-on>H</hammer-on>    # ハンマリング
-        <pull-off>P</pull-off>       # プルオフ
+        <hammer-on>H</hammer-on>
+        <pull-off>P</pull-off>
       </technical>
-      <slide/>                       # スライド
-      <ornaments><tremolo/></ornaments>  # トレモロ
-      <articulations><accent/></articulations>  # アクセント
+      <slide/>
+      <ornaments><tremolo/></ornaments>
+      <articulations><accent/></articulations>
     </notations>
+    
+    <direction> elements are added as children of <measure>, NOT <note>,
+    per the MusicXML specification. They are inserted before the <note>.
+    
+    Parameters
+    ----------
+    note_elem : Element
+        The <note> element.
+    notations : Element
+        The <notations> element (child of <note>).
+    tech : Element
+        The <technical> element (child of <notations>).
+    techniques : list
+        List of technique names or dicts.
+    measure_elem : Element, optional
+        The parent <measure> element, needed for <direction> elements.
     """
     from xml.etree.ElementTree import SubElement
     
@@ -1032,15 +1210,23 @@ def _add_technique_notations(note_elem, notations, tech, techniques):
         tap = SubElement(tech, "tap")
         tap.text = "T"
     
-    # パームミュート
+    # パームミュート -- <direction> must be child of <measure>, not <note>
     if _has_technique(techniques, "palm_mute"):
-        # MusicXML doesn't have a standard palm mute element
-        # Use direction words instead
-        direction = SubElement(note_elem, "direction")
-        direction.set("placement", "above")
-        dt = SubElement(direction, "direction-type")
-        words = SubElement(dt, "words")
-        words.text = "P.M."
+        if measure_elem is not None:
+            # Insert <direction> before the <note> element in <measure>
+            direction = Element("direction")
+            direction.set("placement", "above")
+            dt = SubElement(direction, "direction-type")
+            words = SubElement(dt, "words")
+            words.text = "P.M."
+            # Find the position of note_elem in measure and insert before it
+            note_index = list(measure_elem).index(note_elem)
+            measure_elem.insert(note_index, direction)
+        else:
+            # Fallback: add as notation words if measure_elem not available
+            words_elem = SubElement(notations, "other-notation")
+            words_elem.set("type", "start")
+            words_elem.text = "P.M."
     
     # アクセント / スタッカート
     has_artic = _has_technique(techniques, "accent") or _has_technique(techniques, "staccato")
@@ -1059,57 +1245,89 @@ def _add_technique_notations(note_elem, notations, tech, techniques):
         trem = SubElement(ornaments, "tremolo")
         trem.set("type", "single")
         trem.text = "3"  # 32nd note tremolo
+    
+    # トリル
+    if _has_technique(techniques, "trill"):
+        ornaments = notations.find("ornaments")
+        if ornaments is None:
+            ornaments = SubElement(notations, "ornaments")
+        SubElement(ornaments, "trill-mark")
 
 
 def _build_tab_measure(
     measure, m_num, tab_measures,
     note_names, beat_duration, divisions, beats_per_measure,
-    measure_duration, measure_total_divs, tuning
+    measure_duration, measure_total_divs, tuning, beats=None
 ):
     """Part 2: Guitar TAB を構築（転記ノートをTABで表示）"""
     m_tabs = tab_measures.get(m_num, [])
 
     if not m_tabs:
-        fwd = SubElement(measure, "forward")
-        SubElement(fwd, "duration").text = str(measure_total_divs)
+        _insert_invisible_rest(measure, measure_total_divs)
         return
 
     # 時間順にソート & グループ化
     m_tabs.sort(key=lambda t: (t["time"], t["midi_pitch"]))
     groups = _group_tab_simultaneous(m_tabs, tolerance=0.03)
 
-    filled_divs = 0
-
+    # 各グループのdivision位置を先に計算
+    group_positions = []
     for group in groups:
         if not group:
             continue
-
         tab_start = group[0]["time"]
-        tab_offset = tab_start - (m_num - 1) * measure_duration
-        target_div = round(tab_offset / beat_duration * divisions)
+        # T-2: beats配列があれば正確なビート位置を計算
+        if beats is not None and len(beats) > 1:
+            beat_idx = int(np.searchsorted(beats, tab_start, side='right')) - 1
+            beat_idx = max(0, beat_idx)
+            measure_first_beat = (m_num - 1) * beats_per_measure
+            beat_in_measure = beat_idx - measure_first_beat
+            if beat_idx < len(beats) - 1:
+                local_beat_dur = beats[beat_idx + 1] - beats[beat_idx]
+            else:
+                local_beat_dur = beat_duration
+            frac = (tab_start - beats[beat_idx]) / local_beat_dur if local_beat_dur > 0 else 0.0
+            raw_div = (beat_in_measure + frac) * divisions
+        else:
+            tab_offset = tab_start - (m_num - 1) * measure_duration
+            raw_div = tab_offset / beat_duration * divisions
+        # T-4: グリッドスナップ
+        target_div = snap_to_grid(round(raw_div), divisions)
         target_div = max(0, min(target_div, measure_total_divs - 1))
+        group_positions.append((target_div, group))
 
-        # ギャップ（休符）
-        gap = target_div - filled_divs
-        if gap > 0:
-            fwd = SubElement(measure, "forward")
-            SubElement(fwd, "duration").text = str(gap)
-            filled_divs += gap
+    if not group_positions:
+        _insert_invisible_rest(measure, measure_total_divs)
+        return
 
-        # ノート長
-        avg_dur = sum(t["duration"] for t in group) / len(group)
-        note_type, note_divs, is_dotted = quantize_duration_to_note_type(
-            avg_dur, beat_duration, divisions
+    # T-5: 同弦衝突防止 -- 同弦の2ノートが同じbeat_posなら後者を3divs後方に押し出す
+    _resolve_same_string_collisions(group_positions, measure_total_divs)
+
+    filled_divs = 0
+
+    for g_idx, (target_div, group) in enumerate(group_positions):
+
+        # T-3: Hybrid IOI で duration を決定
+        note_divs = _calc_hybrid_ioi_divs(
+            g_idx, group, group_positions,
+            filled_divs, measure_total_divs, divisions, beat_duration
         )
+
+        if note_divs <= 0:
+            note_divs = divisions  # 最小でも1拍分
 
         remaining = measure_total_divs - filled_divs
         if note_divs > remaining:
             note_divs = remaining
-            note_type = _divs_to_note_type(note_divs, divisions)
-            is_dotted = False
+
+        # T-6: duration小節境界キャップ
+        if filled_divs + note_divs > measure_total_divs:
+            note_divs = measure_total_divs - filled_divs
 
         if note_divs <= 0:
             continue
+
+        note_type, is_dotted = _divs_to_note_type(note_divs, divisions)
 
         # グループ内の各TABノートを出力
         first_in_chord = True
@@ -1120,10 +1338,10 @@ def _build_tab_measure(
                 SubElement(note_elem, "chord")
             first_in_chord = False
 
-            # ピッチ情報（ギターは実音より1オクターブ高く記譜）
+            # ピッチ情報（実音のまま記譜 -- AlphaTabはTABクレフでも自動転位しない）
             pitch_elem = SubElement(note_elem, "pitch")
             midi_p = td["midi_pitch"]
-            written_midi = midi_p + 12  # Guitar sounds octave lower
+            written_midi = midi_p
             step_name = note_names[written_midi % 12]
             step = step_name[0]
             alter = 1 if "#" in step_name else (-1 if "b" in step_name else 0)
@@ -1138,8 +1356,8 @@ def _build_tab_measure(
             if is_dotted:
                 SubElement(note_elem, "dot")
 
-            # ブラッシング/ミュート: Xノートヘッド
-            if _has_technique(techniques, "mute_brush"):
+            # ブラッシング/ミュート/デッドノート: Xノートヘッド
+            if _has_technique(techniques, "mute_brush") or _has_technique(techniques, "x"):
                 SubElement(note_elem, "notehead").text = "x"
             # ゴーストノート: 括弧付きノートヘッド
             elif _has_technique(techniques, "ghost_note"):
@@ -1153,16 +1371,68 @@ def _build_tab_measure(
             SubElement(tech, "string").text = str(td["string"])
             SubElement(tech, "fret").text = str(td["fret"])
 
-            # テクニック要素を付加
-            _add_technique_notations(note_elem, notations, tech, techniques)
+            # テクニック要素を付加 (pass measure for <direction> placement)
+            _add_technique_notations(note_elem, notations, tech, techniques, measure_elem=measure)
 
         filled_divs += note_divs
 
-    # 小節末尾の休符
-    remaining = measure_total_divs - filled_divs
-    if remaining > 0:
-        fwd = SubElement(measure, "forward")
-        SubElement(fwd, "duration").text = str(remaining)
+
+def _resolve_same_string_collisions(group_positions, measure_total_divs):
+    """T-5: 同弦衝突防止 -- 同じbeat_posに同弦ノートがあれば後者を3divs押し出す"""
+    # (beat_pos, string) -> 使用済みかどうか を追跡
+    used = {}  # (beat_pos, string_num) -> True
+    for gp_idx in range(len(group_positions)):
+        beat_pos, group = group_positions[gp_idx]
+        for td in group:
+            key = (beat_pos, td["string"])
+            if key in used:
+                # 衝突: beat_posを3divs後方に押し出す
+                new_pos = min(beat_pos + 3, measure_total_divs - 1)
+                group_positions[gp_idx] = (new_pos, group)
+                beat_pos = new_pos
+                key = (beat_pos, td["string"])
+            used[key] = True
+
+
+def _calc_hybrid_ioi_divs(
+    g_idx, group, group_positions,
+    filled_divs, measure_total_divs, divisions, beat_duration
+):
+    """
+    T-3: Hybrid IOI でdurationを決定する。
+    1. 同弦の次ノートがある -> 同弦IOI (start差) を divisions 換算
+    2. ない場合 -> 全弦の次ノートまでの距離を divisions 換算
+    3. 最後のノート -> 小節末まで
+    """
+    current_strings = {td["string"] for td in group}
+    current_time = group[0]["time"]
+
+    # 1. 同弦の次ノートを探す
+    same_string_ioi = None
+    for future_idx in range(g_idx + 1, len(group_positions)):
+        _, future_group = group_positions[future_idx]
+        for ftd in future_group:
+            if ftd["string"] in current_strings:
+                ioi_sec = ftd["time"] - current_time
+                if ioi_sec > 0:
+                    same_string_ioi = round(ioi_sec / beat_duration * divisions)
+                    same_string_ioi = snap_to_grid(same_string_ioi, divisions)
+                break
+        if same_string_ioi is not None:
+            break
+
+    if same_string_ioi is not None and same_string_ioi > 0:
+        return same_string_ioi
+
+    # 2. 全弦の次ノートまでの距離
+    if g_idx + 1 < len(group_positions):
+        next_div = group_positions[g_idx + 1][0]
+        note_divs = next_div - filled_divs
+        if note_divs > 0:
+            return note_divs
+
+    # 3. 最後のノート -> 小節末まで
+    return measure_total_divs - filled_divs
 
 
 def _group_tab_simultaneous(tabs: List[Dict], tolerance: float = 0.03) -> List[List[Dict]]:
@@ -1181,21 +1451,36 @@ def _group_tab_simultaneous(tabs: List[Dict], tolerance: float = 0.03) -> List[L
     return groups
 
 
-def _divs_to_note_type(divs: int, divisions: int = 12) -> str:
-    """divisions値から最も近い音符タイプを返す"""
-    # divisions=12: whole=48, half=24, quarter=12, eighth=6, 16th=3, 32nd=1-2
-    if divs >= 36:
-        return "whole"
-    elif divs >= 18:
-        return "half"
-    elif divs >= 9:
-        return "quarter"
-    elif divs >= 5:
-        return "eighth"
-    elif divs >= 2:
-        return "16th"
-    else:
-        return "32nd"
+def _divs_to_note_type(divs: int, divisions: int = 12):
+    """divisions値から (note_type, is_dotted) を返す。
+    
+    divisions=12 の場合:
+      whole=48, dotted half=36, half=24, dotted quarter=18,
+      quarter=12, dotted eighth=9, eighth=6, triplet eighth=4,
+      16th=3, 32nd=1-2
+    
+    付点音符を正しく判定し、AlphaTabでduration/type不整合による
+    赤い四角やリズムのズレを防止する。
+    """
+    # 正確な値にマッチ（付点音符対応）
+    exact_map = {
+        48: ("whole", False),
+        36: ("half", True),      # 付点2分
+        24: ("half", False),
+        18: ("quarter", True),   # 付点4分
+        12: ("quarter", False),
+        9:  ("eighth", True),    # 付点8分
+        6:  ("eighth", False),
+        4:  ("eighth", False),   # 三連符（8分）
+        3:  ("16th", False),
+        2:  ("16th", False),
+        1:  ("32nd", False),
+    }
+    if divs in exact_map:
+        return exact_map[divs]
+    # 最も近い標準音価にスナップ
+    closest = min(exact_map.keys(), key=lambda k: abs(k - divs))
+    return exact_map[closest]
 
 
 def _chord_name_to_kind(chord_name: str) -> str:
@@ -1256,8 +1541,7 @@ def _empty_musicxml(title: str, key: str, time_sig: Tuple[int, int]) -> str:
     clef = SubElement(attrs, "clef")
     SubElement(clef, "sign").text = "G"
     SubElement(clef, "line").text = "2"
-    fwd = SubElement(measure, "forward")
-    SubElement(fwd, "duration").text = str(12 * time_sig[0])
+    _insert_invisible_rest(measure, 12 * time_sig[0])
 
     rough_string = tostring(score, encoding="unicode")
     dom = minidom.parseString(rough_string)
