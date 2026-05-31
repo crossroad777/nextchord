@@ -675,9 +675,51 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 all_text.append(text)
                             print(f"[{sid}] [WHISPER] faster-whisper done: {len(segments)} segments", flush=True)
                             perf_log.append(f"[DEBUG] Whisper segments: {len(segments)}")
+                            
+                            # --- initial_prompt ハルシネーション除去 ---
+                            # Whisperがinitial_promptの内容を歌詞冒頭に出力することがある
+                            _initial_prompt_text = "日本語の歌。君を忘れない曲がりくねった道を行く生まれたての太陽と夢を渡る黄色い砂"
+                            _prompt_fragments = ["日本語の歌", "君を忘れない", "曲がりくねった道を行く",
+                                                 "生まれたての太陽と", "夢を渡る黄色い砂"]
                             if segments:
-                                perf_log.append(f"[DEBUG] First segment: {segments[0].get('text','')[:80]}")
-                            return {'segments': segments, 'text': ''.join(all_text)}
+                                first_text = segments[0].get('text', '')
+                                prompt_leaked = False
+                                for frag in _prompt_fragments:
+                                    if frag in first_text:
+                                        prompt_leaked = True
+                                        break
+                                if prompt_leaked:
+                                    # initial_promptの文字列を除去
+                                    cleaned = first_text
+                                    for frag in _prompt_fragments:
+                                        cleaned = cleaned.replace(frag, '')
+                                    cleaned = cleaned.replace('。', '').strip()
+                                    if cleaned:
+                                        segments[0]['text'] = cleaned
+                                        # wordsからもprompt部分を除去
+                                        if 'words' in segments[0]:
+                                            clean_words = []
+                                            prompt_chars = set(_initial_prompt_text.replace('。', ''))
+                                            skip_until_real = True
+                                            for w in segments[0]['words']:
+                                                word_text = w.get('word', '')
+                                                if skip_until_real:
+                                                    # promptの文字のみで構成されるwordはスキップ
+                                                    if all(c in prompt_chars for c in word_text.strip()):
+                                                        continue
+                                                    skip_until_real = False
+                                                clean_words.append(w)
+                                            if clean_words:
+                                                segments[0]['words'] = clean_words
+                                                segments[0]['start'] = clean_words[0].get('start', segments[0]['start'])
+                                        print(f"[{sid}] [WHISPER] Removed initial_prompt hallucination from first segment: '{first_text[:40]}' -> '{cleaned[:40]}'")
+                                    else:
+                                        # 全てpromptだった → セグメント自体を除去
+                                        segments.pop(0)
+                                        print(f"[{sid}] [WHISPER] Removed entire first segment (initial_prompt hallucination)")
+                                
+                                perf_log.append(f"[DEBUG] First segment: {segments[0].get('text','')[:80]}" if segments else "[DEBUG] No segments")
+                            return {'segments': segments, 'text': ''.join(s.get('text','') for s in segments)}
                         except Exception as e:
                             print(f"[{sid}] [WHISPER] [ERROR] faster-whisper error: {type(e).__name__}: {e}")
                             import traceback
