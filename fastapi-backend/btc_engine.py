@@ -93,97 +93,135 @@ class BTCEngine:
         
         print(f"[BTC] Model loaded: {model_label} on {self.device}")
     
-    def detect_chords(self, wav_path):
+    def detect_chords(self, wav_path, use_hpss=True):
         """
         音声ファイルからコード進行を検出する。
-        
+
         Parameters
         ----------
         wav_path : str or Path
-            WAV/MP3 ファイルパス
-        
+        use_hpss : bool
+            True: HPSS で調波成分のみ抽出してから解析（Chordify式、推奨）
+
         Returns
         -------
         seg_starts : np.ndarray
-            各コードセグメントの開始時刻 (秒)
         seg_labels : np.ndarray
-            各コードセグメントのラベル (例: 'C', 'A:min', 'G:7')
         """
         if not self._loaded:
             self.load()
-        
+
+        # HPSS 前処理（Chordify 方式）
+        if use_hpss:
+            y_raw, sr_raw = librosa.load(str(wav_path), sr=22050, mono=True)
+            y_harmonic, _ = librosa.effects.hpss(y_raw, margin=3.0)
+            # 一時ファイルに書き出す
+            import tempfile, soundfile as sf
+            tmp = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+            sf.write(tmp.name, y_harmonic, sr_raw)
+            input_path = tmp.name
+            print(f'[BTC] HPSS applied → {tmp.name}')
+        else:
+            input_path = str(wav_path)
+
         # CQT 特徴量を計算
         feature, feature_per_second, song_length_second = audio_file_to_features(
-            str(wav_path), self.config
+            input_path, self.config
         )
-        
+
+        # 一時ファイル削除
+        if use_hpss:
+            import os as _os
+            try:
+                _os.unlink(tmp.name)
+            except Exception:
+                pass
+
         # 正規化
         feature = feature.T
         feature = (feature - self.mean) / self.std
         time_unit = feature_per_second
         n_timestep = self.config.model['timestep']
-        
+
         # パディング
         num_pad = n_timestep - (feature.shape[0] % n_timestep)
+        if num_pad == n_timestep:
+            num_pad = 0
         feature = np.pad(feature, ((0, num_pad), (0, 0)), mode="constant", constant_values=0)
         num_instance = feature.shape[0] // n_timestep
-        
-        # 推論（確信度付き）
+
+        # 推論
+        all_chord_indices = []
+        with torch.no_grad():
+            for t in range(num_instance):
+                chunk = feature[n_timestep * t: n_timestep * (t + 1), :]
+                chunk_tensor = torch.tensor(
+                    chunk, dtype=torch.float32
+                ).unsqueeze(0).to(self.device)  # [1, timestep, features]
+
+                # self_attn_layers の出力を取得
+                self_attn_output, _ = self.model.self_attn_layers(chunk_tensor)
+
+                # SoftmaxOutputLayer で予測
+                prediction, _ = self.model.output_layer(self_attn_output)
+                # prediction: [1, timestep] のインデックス
+                pred_np = prediction.squeeze(0).cpu().numpy()
+                all_chord_indices.extend(pred_np.tolist())
+
+        # パディング分を除去
+        if num_pad > 0:
+            all_chord_indices = all_chord_indices[:-num_pad]
+
+        # フレーム → セグメント変換
         seg_starts = []
         seg_labels = []
-        start_time = 0.0
-        
-        with torch.no_grad():
-            feat_tensor = torch.tensor(feature, dtype=torch.float32).unsqueeze(0).to(self.device)
-            prev_chord = None
-            prev_conf = 0.0
-            
-            # 確信度を取得するために logits -> softmax を直接計算
-            for t in range(num_instance):
-                chunk = feat_tensor[:, n_timestep * t:n_timestep * (t + 1), :]
-                self_attn_output, _ = self.model.self_attn_layers(chunk)
-                # output_layer は predictions, second を返すが、確信度が必要
-                # output_projection を直接呼んで logits -> softmax を再計算
-                logits = self.model.output_layer.output_projection(
-                    self.model.output_layer.lstm(self_attn_output)[0]
-                    if hasattr(self.model.output_layer, 'lstm')
-                    else self_attn_output
-                )
-                probs = torch.softmax(logits.squeeze(0), dim=-1)  # [timestep, num_chords]
-                
-                for i in range(n_timestep):
-                    current_time = time_unit * (n_timestep * t + i)
-                    
-                    frame_probs = probs[i]
-                    conf, chord_idx_t = torch.max(frame_probs, dim=-1)
-                    chord_idx = chord_idx_t.item()
-                    confidence = conf.item()
-                    
-                    # 確信度が低い場合は N (no chord) として扱う
-                    if confidence < 0.3:
-                        chord_idx = 0  # N.C. に相当するインデックス
-                    
-                    if prev_chord is None:
-                        prev_chord = chord_idx
-                        prev_conf = confidence
-                        start_time = 0.0
-                        continue
-                    
-                    if chord_idx != prev_chord:
-                        seg_starts.append(start_time)
-                        seg_labels.append(self.idx_to_chord[prev_chord])
-                        start_time = current_time
-                        prev_chord = chord_idx
-                        prev_conf = confidence
-                    
-                    # 最後のフレーム
-                    if t == num_instance - 1 and i + num_pad == n_timestep:
-                        if start_time != current_time:
-                            seg_starts.append(start_time)
-                            seg_labels.append(self.idx_to_chord[prev_chord])
-                        break
-        
-        return np.array(seg_starts), np.array(seg_labels)
+        prev_chord = None
+        prev_start = 0.0
+
+        for i, chord_idx in enumerate(all_chord_indices):
+            chord_idx = int(chord_idx)
+            current_time = i * time_unit
+
+            if prev_chord is None:
+                prev_chord = chord_idx
+                prev_start = current_time
+                continue
+
+            if chord_idx != prev_chord:
+                seg_starts.append(prev_start)
+                seg_labels.append(self.idx_to_chord[prev_chord])
+                prev_start = current_time
+                prev_chord = chord_idx
+
+        # 最後のセグメント
+        if prev_chord is not None:
+            seg_starts.append(prev_start)
+            seg_labels.append(self.idx_to_chord[prev_chord])
+
+        # 短すぎるセグメント（0.5秒未満）を前にマージ
+        if len(seg_starts) > 1:
+            merged_s, merged_l = [seg_starts[0]], [seg_labels[0]]
+            for i in range(1, len(seg_starts)):
+                duration = (seg_starts[i] - merged_s[-1])
+                if duration < 0.5:
+                    continue  # 前のセグメントに吸収
+                merged_s.append(seg_starts[i])
+                merged_l.append(seg_labels[i])
+            seg_starts, seg_labels = merged_s, merged_l
+
+        print(f'[BTC] {len(seg_labels)} chord segments detected')
+
+        # ============================================================
+        # タイミング補正: BTC は約 0.4秒遅れてコード変化を検出する
+        # (フレームベース処理の固有遅延)。0.4秒前方に補正して精度向上。
+        # ============================================================
+        TIMING_OFFSET = 0.40  # seconds
+        seg_starts_arr = np.array(seg_starts, dtype=float)
+        seg_starts_arr = np.maximum(0.0, seg_starts_arr - TIMING_OFFSET)
+        print(f'[BTC] Timing correction applied: -{TIMING_OFFSET}s to all segments')
+
+        return seg_starts_arr, np.array(seg_labels)
+
 
 
 # --- シングルトンインスタンス（パイプライン用） ---

@@ -67,6 +67,7 @@ def detect_techniques(
     wav_path: Optional[str] = None,
     beats:    Optional[List[float]] = None,
     bpm:      float = 120.0,
+    song_type: str = 'band',
 ) -> List[dict]:
     """
     NextChord ノートリストにテクニック情報を付与する。
@@ -77,6 +78,7 @@ def detect_techniques(
     wav_path : 音声ファイルパス (F0解析に使用、省略可)
     beats    : ビート位置リスト (未使用、将来拡張用)
     bpm      : テンポ (IOI閾値スケーリングに使用)
+    song_type: 'band' or 'solo' -- band mode skips F0 analysis (pyin) for performance
 
     Returns
     -------
@@ -98,7 +100,8 @@ def detect_techniques(
     audio_sr   = None
     global_f0  = None
 
-    if wav_path:
+    if wav_path and song_type != 'band':
+        # Solo mode: load audio + run pyin for F0-based technique detection
         try:
             import librosa
             audio, audio_sr = librosa.load(wav_path, sr=F0_SR, mono=True)
@@ -115,6 +118,9 @@ def detect_techniques(
             print(f"[Technique] Global F0 computed: {len(global_f0)} frames")
         except Exception as e:
             print(f"[Technique] Audio load failed: {e}, falling back to rule-based")
+    elif wav_path and song_type == 'band':
+        # Band mode: skip pyin entirely, audio loaded lazily below for palm mute / dead note
+        print(f"[Technique] Band mode: skipping F0 analysis (pyin)")
 
     # ── ブラッシング/ミュート検出 ──
     # Moved to the end of the function: called once either in the audio-based
@@ -195,12 +201,21 @@ def detect_techniques(
             if note.get("fret") in NH_FRETS:
                 _check_harmonic(note)
 
+    # --- Band mode: lazy-load audio for palm mute / dead note detection ---
+    if audio is None and wav_path and song_type == 'band':
+        try:
+            import librosa
+            audio, audio_sr = librosa.load(wav_path, sr=F0_SR, mono=True)
+            print(f"[Technique] Band mode: audio loaded for spectral analysis: {len(audio)/audio_sr:.1f}s")
+        except Exception as e:
+            print(f"[Technique] Band mode: audio load failed: {e}")
+
     # --- パームミュート（スペクトル重心ベース）---
-    if audio is not None and global_f0 is not None:
+    if audio is not None:
         _detect_palm_mute_batch(notes, audio, audio_sr)
 
     # --- ブラッシング/デッドノート（音響ベース: voiced_ratio + spectral_flatness）---
-    if audio is not None and global_f0 is not None:
+    if audio is not None:
         _detect_dead_notes(notes, audio, audio_sr, global_f0)
     else:
         # 音声なしフォールバック: 時間ベースのブラッシング検出
@@ -506,6 +521,10 @@ def _detect_palm_mute_batch(
     """スペクトル重心が中央値の45%以下 + 短duration -> パームミュート。"""
     try:
         import librosa
+        # Batch compute spectral centroid over the full audio (single call)
+        full_centroid = librosa.feature.spectral_centroid(y=audio, sr=sr, hop_length=512)[0]
+        centroid_fps = sr / 512  # frames per second for hop_length=512
+
         centroids = []
         for note in notes:
             if note.get("technique") and note["technique"] not in ("normal", ""):
@@ -513,12 +532,12 @@ def _detect_palm_mute_batch(
             dur = note["end_time"] - note["start_time"]
             if dur < 0.05:
                 continue
-            s = max(0, int(note["start_time"] * sr))
-            e = min(len(audio), int(note["end_time"] * sr))
-            seg = audio[s:e]
-            if len(seg) < 512:
+            # Look up centroid value at the corresponding frame index
+            start_frame = max(0, int(note["start_time"] * centroid_fps))
+            end_frame = min(len(full_centroid), int(note["end_time"] * centroid_fps) + 1)
+            if end_frame <= start_frame:
                 continue
-            sc = librosa.feature.spectral_centroid(y=seg, sr=sr).mean()
+            sc = float(np.mean(full_centroid[start_frame:end_frame]))
             centroids.append((note, sc))
         if not centroids:
             return
@@ -543,7 +562,7 @@ def _detect_palm_mute_batch(
 
 def _detect_dead_notes(
     notes: List[dict], audio: np.ndarray, sr: int,
-    global_f0: np.ndarray
+    global_f0: Optional[np.ndarray]
 ) -> None:
     """
     音響ベースのデッドノート/ブラッシング検出。
@@ -551,8 +570,16 @@ def _detect_dead_notes(
     """
     try:
         import librosa
+        # Batch compute spectral flatness over the full audio (single call)
+        full_flatness = librosa.feature.spectral_flatness(y=audio, hop_length=512)[0]
+        flatness_fps = sr / 512  # frames per second for hop_length=512
+
         fps = sr / HOP_LENGTH
-        global_voiced = ~np.isnan(global_f0)
+        # voiced detection: use global_f0 if available, otherwise fall back to flatness-only
+        if global_f0 is not None:
+            global_voiced = ~np.isnan(global_f0)
+        else:
+            global_voiced = None
         dead_count = 0
         for note in notes:
             if note.get("technique") and note["technique"] not in ("normal", ""):
@@ -560,24 +587,36 @@ def _detect_dead_notes(
             dur = note["end_time"] - note["start_time"]
             if dur < 0.02:
                 continue
-            start_frame = max(0, int(note["start_time"] * fps))
-            end_frame = min(len(global_voiced), int((note["start_time"] + min(dur, 0.15)) * fps))
-            if end_frame > start_frame:
-                voiced_ratio = float(np.mean(global_voiced[start_frame:end_frame]))
+            # Voiced ratio from global F0 (if available)
+            if global_voiced is not None:
+                start_frame = max(0, int(note["start_time"] * fps))
+                end_frame = min(len(global_voiced), int((note["start_time"] + min(dur, 0.15)) * fps))
+                if end_frame > start_frame:
+                    voiced_ratio = float(np.mean(global_voiced[start_frame:end_frame]))
+                else:
+                    voiced_ratio = 1.0
             else:
-                voiced_ratio = 1.0
-            s = max(0, int(note["start_time"] * sr))
-            e = min(len(audio), int((note["start_time"] + min(dur, 0.15)) * sr))
-            seg = audio[s:e]
-            if len(seg) < 256:
+                # No F0 data (band mode): use a heuristic -- assume unvoiced if flatness is high
+                voiced_ratio = 0.5  # neutral default; rely on flatness check below
+            # Look up flatness value at the corresponding frame index
+            flat_start = max(0, int(note["start_time"] * flatness_fps))
+            flat_end = min(len(full_flatness), int((note["start_time"] + min(dur, 0.15)) * flatness_fps) + 1)
+            if flat_end <= flat_start:
                 continue
-            flatness = float(librosa.feature.spectral_flatness(y=seg).mean())
+            flatness = float(np.mean(full_flatness[flat_start:flat_end]))
             is_unvoiced = voiced_ratio < 0.35
             is_noisy = flatness > 0.30
             is_very_short = dur < 0.08
-            if (is_unvoiced and is_noisy) or (is_unvoiced and is_very_short):
-                note["technique"] = "x"
-                dead_count += 1
+            if global_voiced is not None:
+                # Solo mode: original logic with voiced_ratio
+                if (is_unvoiced and is_noisy) or (is_unvoiced and is_very_short):
+                    note["technique"] = "x"
+                    dead_count += 1
+            else:
+                # Band mode: rely on flatness + short duration heuristic
+                if (is_noisy and is_very_short) or flatness > 0.50:
+                    note["technique"] = "x"
+                    dead_count += 1
         if dead_count > 0:
             print(f"[Technique] Dead notes detected: {dead_count} notes")
     except Exception as e:

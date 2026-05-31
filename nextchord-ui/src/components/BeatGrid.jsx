@@ -157,7 +157,7 @@ export const BeatGrid = ({ data, currentTime, onSeek, transpose = 0, onChordEdit
                                         ) : (
                                             <>
                                                 {/* コード名 - 大きく目立つ */}
-                                                <div className={`text-4xl font-black tracking-tighter leading-none ${isActive ? "text-white" : isEdited ? "text-amber-500" : "text-[var(--nc-text)]"}`}>
+                                                <div className={`text-4xl font-black tracking-tighter leading-none ${isActive ? "text-white" : isEdited ? "text-amber-500" : "text-[var(--nc-text)]"}`} translate="no">
                                                     {shouldShowChord && !isRest ? displayChord : ""}
                                                     {!shouldShowChord && !isRest && (
                                                         <span className={`text-xl opacity-20 ${isActive ? "text-white" : "text-[var(--nc-text-ghost)]"}`}>・</span>

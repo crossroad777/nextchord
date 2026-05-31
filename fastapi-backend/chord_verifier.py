@@ -116,22 +116,25 @@ def _compute_beat_chroma(audio_path, beat_times, sr=22050):
     y, sr = librosa.load(str(audio_path), sr=sr, mono=True)
     y_harmonic = librosa.effects.harmonic(y, margin=3.0)
 
+    # Compute chroma CQT once for the entire audio
+    hop_length = 512
+    chroma_full = librosa.feature.chroma_cqt(y=y_harmonic, sr=sr, hop_length=hop_length)
+    # shape: (12, n_frames)
+
+    frame_times = librosa.frames_to_time(np.arange(chroma_full.shape[1]), sr=sr, hop_length=hop_length)
+
+    # Average chroma within each beat interval
     beat_chromas = []
     for i in range(len(beat_times)):
         start = beat_times[i]
         end = beat_times[i + 1] if i + 1 < len(beat_times) else start + 0.5
 
-        start_sample = int(start * sr)
-        end_sample = min(int(end * sr), len(y_harmonic))
-
-        segment = y_harmonic[start_sample:end_sample]
-        if len(segment) < 512:
+        # Find frames within this beat
+        mask = (frame_times >= start) & (frame_times < end)
+        if mask.any():
+            beat_chromas.append(np.mean(chroma_full[:, mask], axis=1))
+        else:
             beat_chromas.append(np.zeros(12))
-            continue
-
-        hop = len(segment) // 4 or 512
-        chroma = librosa.feature.chroma_cqt(y=segment, sr=sr, hop_length=hop)
-        beat_chromas.append(np.mean(chroma, axis=1))
 
     return np.array(beat_chromas)
 
@@ -449,23 +452,19 @@ def verify_and_correct_chords(
     # ビート同期クロマを計算 (beat-synchronous CQT)
     beat_chromas = _compute_beat_chroma(audio_path, beat_times, sr=sr)
 
-    # 候補コードリスト: ダイアトニック + 全コードから頻出上位
+    # 候補コードリスト: BTCが検出したコードのみ（+ ダイアトニック）
+    # ← 全84コードと比較すると GMaj7/BMaj7 など無関係なコードに誤置換される
     chord_counts = Counter(c for c in beat_chords if c != 'N.C.')
-    frequent_chords = [c for c, _ in chord_counts.most_common(15)]
+    btc_detected = set(chord_counts.keys())
 
-    # ダイアトニック候補
-    key_root = key_name.split()[0] if ' ' in key_name else key_name
-    # 基本的な候補（ダイアトニック + よく使う非ダイアトニック）
-    roots = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
-    candidate_chords = set()
-    for r in roots:
-        for q in ['', 'm', '7', 'm7', 'Maj7', 'dim', 'sus4']:
-            name = f"{r}{q}"
-            if name in _CHORD_PC_CACHE:
-                candidate_chords.add(name)
-    # 頻出コードも候補に
-    candidate_chords.update(frequent_chords)
-    candidate_chords = list(candidate_chords)
+    # ダイアトニックコードも候補に（ただし基本形のみ）
+    diatonic_set = set(_get_diatonic_chords(key_name))
+
+    # 候補 = BTC検出コード + ダイアトニック基本形
+    # ※ GMaj7/BMaj7/DMaj7 などはここに入らない
+    candidate_chords = list(btc_detected | diatonic_set)
+
+    print(f"[ChordVerifier] Candidates restricted to {len(candidate_chords)} chords: {sorted(candidate_chords)[:12]}...")
 
     verified = list(beat_chords)
     scores = []

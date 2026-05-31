@@ -14,9 +14,11 @@
     "@fontsource/orbitron": "^5.2.6",
     "@tailwindcss/postcss": "^4.1.18",
     "axios": "^1.9.0",
+    "kuromoji": "^0.1.2",
     "lucide-react": "^0.515.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "tiny-segmenter": "^0.2.0"
   },
   "devDependencies": {
     "@eslint/js": "^9.25.0",

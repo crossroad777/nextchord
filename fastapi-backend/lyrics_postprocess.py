@@ -117,17 +117,26 @@ def postprocess_whisper_segments(segments: list) -> list:
 
 def clean_hallucinated_endings(lyrics_phrases: list) -> list:
     """
-    歌詞フレーズリストから、曲の最後に出るWhisperハルシネーションを除去。
+    歌詞フレーズリストから、Whisperハルシネーションを除去。
+    イントロ・間奏・アウトロ等で発生する「編曲・歌唱・歌詞」等のパターンを検出。
     """
     if not lyrics_phrases:
         return lyrics_phrases
 
-    # ハルシネーションパターン
+    # ハルシネーションパターン（1つでもマッチしたらフレーズ全体を除去）
     _hallucination_patterns = [
-        r'作詞', r'作曲', r'編曲', r'MV', r'PV',
+        r'作詞', r'作曲', r'編曲', r'歌唱', r'歌詞', r'歌曲',
+        r'MV', r'PV', r'ミュージックビデオ',
         r'ご視聴', r'ご清聴', r'チャンネル',
+        r'視聴してくださ', r'視聴ありがとう',
         r'Music\s*Video', r'Official',
+        r'チャンネル登録', r'高評価',
+        r'提供[：:]', r'協力[：:]',
         r'^\s*$',  # 空文字
+        # ・区切りの繰り返し（「編曲・歌唱・歌詞」等）
+        r'[・]{2,}',
+        # 同じ2文字が3回以上繰り返し（「歌曲歌曲歌曲」等）
+        r'(.{2,4})\1{2,}',
     ]
 
     cleaned = []

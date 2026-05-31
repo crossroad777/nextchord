@@ -65,6 +65,21 @@ class ChordMiniEngine:
         
         print(f"[ChordMini] Model loaded on {self.device}, vocab={len(self.idx_to_chord)}")
     
+    def unload(self):
+        """GPU VRAM を解放する（モデルをCPUに移動 + キャッシュクリア）"""
+        if self.model is not None:
+            try:
+                self.model.cpu()
+            except Exception:
+                pass
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        self._loaded = False
+        self.model = None
+        print("[ChordMini] Model unloaded, VRAM freed")
+    
     def detect_chords(self, wav_path):
         """
         音声ファイルからコード進行を検出する。
@@ -118,8 +133,14 @@ class ChordMiniEngine:
         # 最後のセグメント
         if prev_chord is not None:
             seg_labels.append(prev_chord)
-        
-        return np.array(seg_starts), np.array(seg_labels)
+
+        # タイミング補正: BTC系モデルは約0.4秒遅れてコード変化を検出する
+        TIMING_OFFSET = 0.40
+        seg_starts_arr = np.array(seg_starts, dtype=float)
+        seg_starts_arr = np.maximum(0.0, seg_starts_arr - TIMING_OFFSET)
+        print(f'[ChordMini] {len(seg_labels)} chord segments, timing correction -{TIMING_OFFSET}s applied')
+
+        return seg_starts_arr, np.array(seg_labels)
 
 
 # --- シングルトンインスタンス ---

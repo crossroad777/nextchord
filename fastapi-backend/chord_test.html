@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全コード音確認ページ</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e8eaf0;
+    padding: 20px;
+  }
+  h1 { text-align: center; color: #7c83ff; margin-bottom: 6px; font-size: 1.4rem; }
+  .subtitle { text-align: center; color: #888; font-size: 0.85rem; margin-bottom: 20px; }
+  .section { margin-bottom: 24px; }
+  .section h2 {
+    font-size: 0.95rem;
+    color: #aab;
+    border-bottom: 1px solid #2a2d3a;
+    padding-bottom: 6px;
+    margin-bottom: 12px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .chord-btn {
+    background: #1e2130;
+    border: 1px solid #2e3250;
+    border-radius: 10px;
+    color: #c8caff;
+    font-size: 1rem;
+    font-weight: 600;
+    padding: 10px 18px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    min-width: 70px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .chord-btn:hover {
+    background: #262a42;
+    border-color: #5c63ff;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(92, 99, 255, 0.25);
+  }
+  .chord-btn.playing {
+    background: #2d3a7c;
+    border-color: #7c83ff;
+    color: #fff;
+    box-shadow: 0 0 20px rgba(124, 131, 255, 0.5);
+  }
+  .chord-btn .ripple {
+    position: absolute;
+    inset: 0;
+    background: rgba(124, 131, 255, 0.15);
+    border-radius: 10px;
+    animation: pulse 0.4s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes pulse {
+    0% { opacity: 1; transform: scale(0.8); }
+    100% { opacity: 0; transform: scale(1.2); }
+  }
+  .status-bar {
+    position: fixed;
+    bottom: 16px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #1e2130;
+    border: 1px solid #3a3f60;
+    border-radius: 24px;
+    padding: 10px 24px;
+    font-size: 0.9rem;
+    color: #7c83ff;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  .controls {
+    display: flex;
+    gap: 12px;
+    justify-content: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+  }
+  .ctrl-btn {
+    background: #1a1d2e;
+    border: 1px solid #2e3250;
+    border-radius: 8px;
+    color: #9aa;
+    font-size: 0.8rem;
+    padding: 6px 14px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .ctrl-btn:hover { background: #252840; border-color: #5c63ff; color: #fff; }
+  .ctrl-btn.active { background: #2d3a7c; border-color: #7c83ff; color: #fff; }
+  select {
+    background: #1a1d2e;
+    border: 1px solid #2e3250;
+    border-radius: 8px;
+    color: #ccc;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    cursor: pointer;
+  }
+  select:focus { outline: none; border-color: #5c63ff; }
+  label { color: #888; font-size: 0.8rem; }
+  .api-status {
+    text-align: center;
+    font-size: 0.75rem;
+    color: #555;
+    margin-bottom: 16px;
+  }
+  .api-status.ok { color: #4caf50; }
+  .api-status.err { color: #f44336; }
+</style>
+</head>
+<body>
+
+<h1>🎵 全コード音確認</h1>
+<p class="subtitle">クリックして音を確認してください</p>
+
+<div class="api-status" id="apiStatus">バックエンド確認中...</div>
+
+<div class="controls">
+  <label>オクターブ:
+    <select id="octaveSelect">
+      <option value="3">3 (低)</option>
+      <option value="4" selected>4 (中)</option>
+      <option value="5">5 (高)</option>
+    </select>
+  </label>
+  <label>時間:
+    <select id="durationSelect">
+      <option value="1.0">1秒</option>
+      <option value="1.8" selected>1.8秒</option>
+      <option value="3.0">3秒</option>
+    </select>
+  </label>
+  <button class="ctrl-btn" onclick="stopAll()">⏹ 停止</button>
+</div>
+
+<!-- コード一覧 -->
+<div id="chordSections"></div>
+
+<div class="status-bar" id="statusBar" style="opacity:0">準備完了</div>
+
+<script>
+const API = 'http://localhost:8000';
+
+const CHORD_GROUPS = [
+  {
+    name: 'メジャー（明るい）',
+    chords: ['C','D','E','F','G','A','B','C#','D#','F#','G#','A#']
+  },
+  {
+    name: 'マイナー（暗い・切ない）',
+    chords: ['Cm','Dm','Em','Fm','Gm','Am','Bm','C#m','D#m','F#m','G#m','A#m']
+  },
+  {
+    name: 'ドミナント7（緊張感）',
+    chords: ['C7','D7','E7','F7','G7','A7','B7','C#7','F#7','Bb7']
+  },
+  {
+    name: 'メジャー7（おしゃれ）',
+    chords: ['Cmaj7','Dmaj7','Emaj7','Fmaj7','Gmaj7','Amaj7','Bbmaj7','C#maj7']
+  },
+  {
+    name: 'マイナー7（まろやか）',
+    chords: ['Am7','Bm7','Cm7','Dm7','Em7','Fm7','Gm7','C#m7','F#m7']
+  },
+  {
+    name: 'ディミニッシュ・オーギュメント',
+    chords: ['Cdim','Ddim','Edim','Fdim','Gdim','Adim','Bdim','Caug','Daug','Eaug','Faug','Gaug']
+  },
+  {
+    name: '9th（ドミナント9th・オシャレ感）',
+    chords: ['C9','D9','E9','F9','G9','A9','B9','C#9','F#9','Bb9']
+  },
+  {
+    name: 'maj9（メジャー9th・明るく開放的）',
+    chords: ['Cmaj9','Dmaj9','Emaj9','Fmaj9','Gmaj9','Amaj9','Bbmaj9']
+  },
+  {
+    name: 'm9（マイナー9th・深み）',
+    chords: ['Cm9','Dm9','Em9','Fm9','Gm9','Am9','Bm9','C#m9','F#m9']
+  },
+  {
+    name: 'add9（アド9th・シンプル）',
+    chords: ['Cadd9','Dadd9','Eadd9','Fadd9','Gadd9','Aadd9','Badd9']
+  },
+  {
+    name: '11th・13th（テンション）',
+    chords: ['C11','G11','D11','F11','A11','C13','G13','D13','A13']
+  },
+  {
+    name: 'サスペンド・その他',
+    chords: ['Csus4','Dsus4','Esus4','Fsus4','Gsus4','Asus4','Csus2','Gsus2','Asus2']
+  },
+];
+
+// よく使うコード（チェリーなど日本のポップス）
+const POPULAR = {
+  name: '🎸 よく使うコード（日本ポップス）',
+  chords: ['C','G','Am','Em','F','Dm','Fmaj7','Cmaj7','Am7','G7','E','B7','A','D','Bm']
+};
+
+let currentAudio = null;
+let currentBtn = null;
+
+function stopAll() {
+  if (currentAudio) {
+    currentAudio.pause();
+    currentAudio = null;
+  }
+  if (currentBtn) {
+    currentBtn.classList.remove('playing');
+    currentBtn = null;
+  }
+}
+
+function playChord(chordName, btn) {
+  stopAll();
+  const octave = document.getElementById('octaveSelect').value;
+  const duration = document.getElementById('durationSelect').value;
+  const url = `${API}/chord-audio/${encodeURIComponent(chordName)}?octave=${octave}&duration=${duration}`;
+
+  showStatus(`▶ ${chordName} を再生中...`);
+  btn.classList.add('playing');
+  currentBtn = btn;
+
+  // リップルエフェクト
+  const ripple = document.createElement('div');
+  ripple.className = 'ripple';
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 400);
+
+  const audio = new Audio(url);
+  currentAudio = audio;
+  audio.play().catch(e => {
+    showStatus(`❌ エラー: ${e.message}`);
+    btn.classList.remove('playing');
+    currentBtn = null;
+  });
+  audio.onended = () => {
+    btn.classList.remove('playing');
+    currentBtn = null;
+    showStatus('');
+  };
+}
+
+function showStatus(msg) {
+  const bar = document.getElementById('statusBar');
+  bar.textContent = msg;
+  bar.style.opacity = msg ? '1' : '0';
+}
+
+function buildUI() {
+  const container = document.getElementById('chordSections');
+
+  // よく使うコード（先頭）
+  const sections = [POPULAR, ...CHORD_GROUPS];
+  sections.forEach(group => {
+    const sec = document.createElement('div');
+    sec.className = 'section';
+
+    const h2 = document.createElement('h2');
+    h2.textContent = group.name;
+    sec.appendChild(h2);
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+
+    group.chords.forEach(chord => {
+      const btn = document.createElement('button');
+      btn.className = 'chord-btn';
+      btn.textContent = chord;
+      btn.onclick = () => playChord(chord, btn);
+      grid.appendChild(btn);
+    });
+
+    sec.appendChild(grid);
+    container.appendChild(sec);
+  });
+}
+
+// APIヘルスチェック
+async function checkApi() {
+  try {
+    const r = await fetch(`${API}/health`, { signal: AbortSignal.timeout(3000) });
+    if (r.ok) {
+      document.getElementById('apiStatus').textContent = '✅ バックエンド接続OK（localhost:8000）';
+      document.getElementById('apiStatus').className = 'api-status ok';
+    } else {
+      throw new Error(`HTTP ${r.status}`);
+    }
+  } catch(e) {
+    document.getElementById('apiStatus').textContent = `❌ バックエンド未接続（先にサーバーを起動してください）`;
+    document.getElementById('apiStatus').className = 'api-status err';
+  }
+}
+
+buildUI();
+checkApi();
+</script>
+</body>
+</html>

@@ -20,6 +20,7 @@ import concurrent.futures
 from pathlib import Path
 
 import numpy as np
+import gc
 import librosa
 
 from chord_processing import (
@@ -58,6 +59,9 @@ _KNOWN_HALLUCINATIONS = [
     'thank you for watching', 'thanks for watching',
     'please subscribe', 'like and subscribe',
     'music by', 'subtitles by',
+    '視聴してくださって', '視聴ありがとう', 'ご視聴ありがとう',
+    'チャンネル登録', 'グッドボタン', '高評価',
+    '歌唱', '作詞', '作曲', '編曲', '何', '歌・',
 ]
 
 def _is_hallucination(text: str) -> bool:
@@ -81,10 +85,20 @@ def _is_hallucination(text: str) -> bool:
         if h in t_lower:
             return True
     
-    # 同じ文字の繰り返し（例: "ああああああ"）
-    if len(t) >= 6:
-        unique_chars = set(t.replace(' ', ''))
+    # 同じ文字の繰り返し（例: "ああああああ" "歌 歌 歌 歌"）
+    stripped = t.replace(' ', '').replace('・', '').replace('、', '')
+    if len(stripped) >= 4:
+        unique_chars = set(stripped)
         if len(unique_chars) <= 2:
+            return True
+    
+    # 同じ単語が3回以上繰り返される（例: "歌 歌 歌 歌 歌"）
+    words = t.split()
+    if len(words) >= 3:
+        from collections import Counter as _Counter
+        word_counts = _Counter(words)
+        most_common_count = word_counts.most_common(1)[0][1]
+        if most_common_count >= 3 and most_common_count / len(words) > 0.5:
             return True
     
     return False
@@ -330,6 +344,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     with _gpu_lock:
                         cm.load()
                         seg_s, seg_l = cm.detect_chords(btc_input_path)
+                        cm.unload()  # VRAM解放
                     chord_engine_used = 'ChordMini'
                     from collections import Counter
                     label_counts = Counter(seg_l)
@@ -345,6 +360,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     with _gpu_lock:
                         btc.load()
                         seg_s, seg_l = btc.detect_chords(btc_input_path)
+                        # BTC VRAM解放
+                        try:
+                            btc.model.cpu()
+                        except Exception:
+                            pass
+                        gc.collect()
+                        import torch as _t; _t.cuda.empty_cache() if _t.cuda.is_available() else None
                     chord_engine_used = 'BTC'
                     from collections import Counter
                     label_counts = Counter(seg_l)
@@ -486,7 +508,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 sd["_steps"] = {}
             sd["_steps"][step_name] = msg
             # 完了ステップ数 / 全ステップ数 を計算
-            total_steps = 5  # beats, key, whisper, chords, postprocess
+            total_steps = 4  # beats, key, whisper, chords+postprocess
             done = len(sd["_steps"])
             pct = int(done / total_steps * 100)
             # 最新の完了ステップを表示
@@ -499,7 +521,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         # GPU系タスク: Whisper -> 完了後 -> Demucs + basic-pitch（VRAM 8GBで同時利用不可）
         futures = {}
         session_data["_steps"] = {}
-        session_data["progress"] = "解析中... (0/5) [MUSIC] 解析開始"
+        session_data["progress"] = "解析中... (0/4) [MUSIC] 解析開始"
         save_session(session_id)
         
         perf_log = []
@@ -548,10 +570,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 str(wav),
                                 language="ja",
                                 word_timestamps=True,
-                                initial_prompt="日本語の歌詞。ポップス、ロック、バラード。歌詞を正確に書き起こしてください。",
-                                condition_on_previous_text=False,
-                                no_speech_threshold=0.4,
+                                initial_prompt="日本語の歌。君を忘れない 曲がりくねった道を行く 生まれたての太陽と 夢を渡る黄色い砂",
+                                condition_on_previous_text=True,
+                                no_speech_threshold=0.3,
                                 vad_filter=False,
+                                beam_size=5,
+                                temperature=0.0,
                             )
                             print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
                             perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
@@ -561,12 +585,80 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             for seg in segments_iter:
                                 text = seg.text.strip()
                                 
-                                # ハルシネーションフィルタ: 韓国語・絵文字・繰り返しを除外
-                                if _is_hallucination(text):
+                                # ハルシネーション判定（韓国語・絵文字・繰り返し）
+                                is_halluc = _is_hallucination(text)
+                                
+                                # ワードタイムスタンプがある場合: ワードレベルで実際の歌詞を救出
+                                # セグメント全体を破棄しない（「作詞 何々 君を忘れない」のような混在を救う）
+                                if seg.words:
+                                    import re
+                                    words_list = [
+                                        {'start': w.start, 'end': w.end, 'word': w.word}
+                                        for w in seg.words
+                                    ]
+                                    _hiragana_re = re.compile(r'[\u3040-\u309F]')
+                                    _katakana_re = re.compile(r'[\u30A0-\u30FF]')
+                                    _kanji_re = re.compile(r'[\u4E00-\u9FFF]')
+                                    # 音楽クレジット系ハルシネーションキーワード
+                                    _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏', '何',
+                                                  'Movie', 'movie', 'Music', 'music', 'Video', 'video',
+                                                  'Subscribe', 'subscribe', 'Sound', 'sound'}
+                                    _punct_re = re.compile(r'^[\s\u3000・、。\-―─…♪♫\u200b]+$')
+                                    _hangul_re_local = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF]')
+                                    
+                                    clean_words = []
+                                    found_real = False
+                                    for w in words_list:
+                                        word_text = w['word'].strip()
+                                        if not word_text:
+                                            continue
+                                        # 韓国語ワード → 常にスキップ
+                                        if _hangul_re_local.search(word_text):
+                                            continue
+                                        if not found_real:
+                                            # ハルシネーションキーワードを含む → スキップ
+                                            if any(kw in word_text for kw in _halluc_kw):
+                                                continue
+                                            # 中黒・スペースだけ → スキップ
+                                            if _punct_re.match(word_text):
+                                                continue
+                                            # ひらがな/カタカナ/漢字を含む = 実際の歌詞開始
+                                            if (_hiragana_re.search(word_text) or 
+                                                _katakana_re.search(word_text) or
+                                                _kanji_re.search(word_text)):
+                                                found_real = True
+                                            else:
+                                                continue
+                                        clean_words.append(w)
+                                    
+                                    if clean_words:
+                                        words_list = clean_words
+                                        cleaned_text = ''.join(w['word'] for w in clean_words).strip()
+                                        removed_count = len(seg.words) - len(clean_words)
+                                        if removed_count > 0:
+                                            print(f"[{sid}] [WHISPER] Cleaned segment [{seg.start:.1f}s-{seg.end:.1f}s]: "
+                                                  f"removed {removed_count} halluc words, kept: {cleaned_text[:60]}")
+                                        seg_dict = {
+                                            'id': seg.id,
+                                            'start': clean_words[0]['start'],
+                                            'end': clean_words[-1].get('end', seg.end),
+                                            'text': cleaned_text,
+                                            'words': words_list,
+                                        }
+                                        segments.append(seg_dict)
+                                        all_text.append(cleaned_text)
+                                        continue
+                                    else:
+                                        # 全ワードがハルシネーション
+                                        print(f"[{sid}] [WHISPER] All words hallucination [{seg.start:.1f}s-{seg.end:.1f}s], skipping")
+                                        continue
+                                
+                                # ワードタイムスタンプなし: セグメントレベルで判定
+                                if is_halluc:
                                     try:
-                                        print(f"[{sid}] [WHISPER] Filtered hallucination: {text[:60].encode('ascii', 'replace').decode()}")
+                                        print(f"[{sid}] [WHISPER] Filtered hallucination [{seg.start:.1f}s-{seg.end:.1f}s]: {text[:80]}")
                                     except Exception:
-                                        print(f"[{sid}] [WHISPER] Filtered hallucination segment")
+                                        print(f"[{sid}] [WHISPER] Filtered hallucination segment [{seg.start:.1f}s-{seg.end:.1f}s]")
                                     continue
                                 
                                 seg_dict = {
@@ -575,11 +667,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     'end': seg.end,
                                     'text': text,
                                 }
-                                if seg.words:
-                                    seg_dict['words'] = [
-                                        {'start': w.start, 'end': w.end, 'word': w.word}
-                                        for w in seg.words
-                                    ]
                                 segments.append(seg_dict)
                                 all_text.append(text)
                             print(f"[{sid}] [WHISPER] faster-whisper done: {len(segments)} segments", flush=True)
@@ -592,13 +679,20 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             import traceback
                             traceback.print_exc()
                             return {'segments': [], 'text': ''}
+                        finally:
+                            # Whisper完了後にVRAM解放
+                            gc.collect()
+                            import torch as _tc
+                            if _tc.cuda.is_available():
+                                _tc.cuda.empty_cache()
+                                print(f"[{sid}] [WHISPER] VRAM cache cleared")
                     else:
                         # openai-whisper API
                         import torch as _torch
                         opts = dict(
                             language="ja",
                             word_timestamps=True,
-                            initial_prompt="日本語の歌詞。ポップス、ロック、バラード。歌詞を正確に書き起こしてください。",
+                            initial_prompt="歌",
                             condition_on_previous_text=False,
                             no_speech_threshold=0.4,
                             fp16=_torch.cuda.is_available(),
@@ -610,6 +704,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             if _torch.cuda.is_available():
                                 _torch.cuda.empty_cache()
                             return model.transcribe(str(wav), **opts)
+                        finally:
+                            # openai-whisper完了後にVRAM解放
+                            gc.collect()
+                            if _torch.cuda.is_available():
+                                _torch.cuda.empty_cache()
+                                print(f"[{sid}] [WHISPER] VRAM cache cleared")
             
             futures['whisper_res'] = executor.submit(_whisper_with_lock, whisper_model, wav_path, session_id) if whisper_model else None
             
@@ -639,17 +739,67 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             if not futures.get('whisper_res'):
                 perf_log.append(f"[SKIP] Whisper: whisper_model not available")
             
-            # === Notes (Demucs+basic-pitch) は初回解析ではスキップ ===
-            # TABビュー表示時にオンデマンドで実行する（高速化のため）
-            # Deep Analysis（reanalyze）時のみ即時実行
+            # === Demucs htdemucs (4ステム) をバックグラウンドで起動 ===
+            # HMM Viterbiクロマ検証でother.wavを使うため、初回解析でも実行
+            # Notes (basic-pitch) は引き続きTABビュー時にオンデマンド
             import torch
             _has_gpu = torch.cuda.is_available()
             note_events = []
             guitar_wav_override = session_data.get("guitar_wav_path")
             is_deep_analysis = session_data.get("is_deep_analysis", False)
             
+            def _run_demucs_htdemucs(wav_p, out_dir, sid):
+                """Demucs htdemucs (4ステム) を実行してother.wavを生成"""
+                import subprocess, sys, os
+                out = Path(out_dir)
+                # キャッシュチェック
+                htdemucs_dir = out / "htdemucs"
+                if htdemucs_dir.exists():
+                    for d in htdemucs_dir.iterdir():
+                        if d.is_dir() and (d / "other.wav").exists():
+                            print(f"[{sid}] [DEMUCS] Using cached htdemucs: {d / 'other.wav'}")
+                            return str(d / "other.wav")
+                
+                # GPU排他ロック（Whisper完了後に実行）
+                print(f"[{sid}] [DEMUCS] Waiting for GPU lock...")
+                with _gpu_lock:
+                    print(f"[{sid}] [DEMUCS] GPU lock acquired, running htdemucs (4-stem)...")
+                    try:
+                        cmd = [
+                            sys.executable, "-m", "demucs.separate",
+                            "-o", str(out),
+                            "-n", "htdemucs",
+                            str(wav_p)
+                        ]
+                        result = subprocess.run(
+                            cmd, check=True, capture_output=True, text=True,
+                            env={"PYTHONIOENCODING": "utf-8", **os.environ}
+                        )
+                        # other.wav を探す
+                        if htdemucs_dir.exists():
+                            for d in htdemucs_dir.iterdir():
+                                if d.is_dir() and (d / "other.wav").exists():
+                                    print(f"[{sid}] [DEMUCS] [OK] other.wav: {d / 'other.wav'}")
+                                    return str(d / "other.wav")
+                        print(f"[{sid}] [DEMUCS] [WARN] htdemucs succeeded but other.wav not found")
+                        return None
+                    except Exception as e:
+                        print(f"[{sid}] [DEMUCS] [ERR] htdemucs failed: {e}")
+                        return None
+                    finally:
+                        # Demucs完了後にVRAM解放
+                        gc.collect()
+                        import torch as _td
+                        if _td.cuda.is_available():
+                            _td.cuda.empty_cache()
+                            print(f"[{sid}] [DEMUCS] VRAM cache cleared")
+            
+            # Demucsは全並列タスク完了後に直列実行（HMM検証前）
+            # GPU lockの競合を避けるため
+            futures['demucs'] = None
+            
             if is_deep_analysis and transcribe_notes:
-                # Deep Analysis時のみ即時実行
+                # Deep Analysis時のみノート検出即時実行
                 if guitar_wav_override and Path(guitar_wav_override).exists():
                     print(f"[{session_id}] [PIPELINE] Deep Analysis: using pre-separated guitar")
                     futures['note_events'] = executor.submit(
@@ -782,6 +932,21 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     import traceback
                     traceback.print_exc()
             
+            # Demucs回収（HMMクロマ検証用のother.wav）
+            demucs_other_wav = None
+            if futures.get('demucs'):
+                try:
+                    demucs_other_wav = futures['demucs'].result()
+                    t_demucs = time.time() - start_total
+                    if demucs_other_wav:
+                        perf_log.append(f"[OK] Demucs: {t_demucs:.1f}s (other.wav ready)")
+                        print(f"[{session_id}] [PERF] Demucs done: {t_demucs:.1f}s")
+                    else:
+                        perf_log.append(f"[WARN] Demucs: {t_demucs:.1f}s (no output)")
+                except Exception as e:
+                    perf_log.append(f"[FAIL] Demucs: {type(e).__name__}: {e}")
+                    print(f"[{session_id}] [ERROR] Demucs failed: {e}")
+            
             # === Tuning estimation from detected notes ===
             if note_events:
                 try:
@@ -896,7 +1061,18 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         if "key" not in session_data:
             session_data["key"] = "C major"
 
+        # ============================================================
+        # === Music21 コード再スコアリング ===
+        # ⚠️ 無効化: このブロックはキー確定 (line ~1447) より前に実行されるため
+        #    madmom の誤ったキー (例: Eb major) を使ってしまう。
+        #    正しいキー確定後に Music21 を適用すべき。
+        #    → ChordVerifier (line ~1480) が同等の役割を果たしている。
+        # ============================================================
+        perf_log.append("[Music21] Re-scoring skipped (runs after key consensus now)")
+
+
         # 拍子を推定（ビート配列 + onset strengthアクセントパターンから）
+
         time_sig = _estimate_time_signature(v_time, bpm, wav_path=wav_path)
         session_data["time_signature"] = time_sig
         print(f"[{session_id}] [TIME_SIG] Estimated: {time_sig}")
@@ -905,6 +1081,24 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             beats_per_bar = int(time_sig.split('/')[0])
         except Exception:
             beats_per_bar = 4
+
+        # === Bar positions (downbeats) from actual beat times ===
+        # Every beats_per_bar-th beat is a downbeat (bar start).
+        # This provides precise bar boundaries for the frontend's 4-bar line splitting.
+        beat_times_list = [float(t) for t in v_time]
+        bar_positions = [float(v_time[i]) for i in range(0, len(v_time), beats_per_bar)]
+        # Also compute downbeats (= bar_positions) and all beats
+        downbeats = list(bar_positions)  # alias for clarity
+        
+        # Store in session for the result endpoint
+        session_data["bar_positions"] = bar_positions
+        session_data["downbeats"] = downbeats
+        
+        n_bars = len(bar_positions)
+        print(f"[{session_id}] [BARS] {n_bars} bars from {len(v_time)} beats "
+              f"({beats_per_bar} beats/bar), "
+              f"first bar at {bar_positions[0]:.3f}s" if bar_positions else "no bars")
+        perf_log.append(f"Bar positions: {n_bars} bars from {len(v_time)} beats")
 
         # 3. Whisper (Lyrics) -- 単語レベルで拍/小節に配置
         # ★ BPM倍取り補正後のv_timeを使って正しいbar/beatを計算する
@@ -1101,17 +1295,24 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             w.writerow(["bar", "beat", "start", "end", "lyrics"])
             for lyr in lyrics_data:
                 w.writerow([lyr[0]+1, lyr[1]+1, lyr[2], lyr[3], lyr[4]])
-        # Whisperのフレーズ単位セグメントを保存
+        # Whisperのフレーズ単位セグメントを保存（ワードタイムスタンプ付き）
         lyrics_phrases = []
         if whisper_res:
             for seg in whisper_res.get('segments', []):
                 text = seg.get('text', '').strip()
                 if text:
-                    lyrics_phrases.append({
+                    phrase = {
                         "start": round(seg['start'], 3),
                         "end": round(seg['end'], 3),
                         "text": text
-                    })
+                    }
+                    # ワードレベルタイムスタンプ（コード-歌詞位置の精密照合用）
+                    if seg.get('words'):
+                        phrase["words"] = [
+                            {"start": round(w['start'], 3), "end": round(w['end'], 3), "word": w['word']}
+                            for w in seg['words']
+                        ]
+                    lyrics_phrases.append(phrase)
 
         # Janome形態素解析で自然な日本語の分割を行った表示用フレーズを生成
         display_phrases = lyrics_phrases
@@ -1125,13 +1326,36 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         except Exception as e:
             perf_log.append(f"Warning: phrase_processor failed: {e}, using raw phrases")
 
+        # --- ChordPro形式テキストを生成 ---
+        chordpro_text = ""
+        try:
+            from chordpro_converter import structured_to_chordpro
+            song_title = session_data.get("title", "")
+            song_artist = session_data.get("artist", "")
+            song_key = sessions[session_id].get("key", "")
+            chordpro_text = structured_to_chordpro(
+                structured, lyrics_phrases=lyrics_phrases,
+                display_phrases=display_phrases,
+                title=song_title, artist=song_artist, key=song_key,
+                beats_per_bar=beats_per_bar
+            )
+            perf_log.append(f"ChordPro text: {len(chordpro_text)} chars, {chordpro_text.count(chr(10))} lines")
+        except Exception as e:
+            perf_log.append(f"Warning: ChordPro conversion failed: {e}")
+            import traceback; traceback.print_exc()
+
         session_data["result"] = {
             "session_id": session_id,
             "key": sessions[session_id].get("key", "Unknown"),
             "structured_data": structured,
             "lyrics_phrases": lyrics_phrases,
             "display_phrases": display_phrases,
+            "chordpro_text": chordpro_text,
             "estimated_tuning": session_data.get("estimated_tuning", "standard"),
+            "beat_times": beat_times_list,
+            "downbeats": downbeats,
+            "bar_positions": bar_positions,
+            "beats_per_bar": beats_per_bar,
         }
         
         # --- Post-processing summary ---
@@ -1181,40 +1405,50 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             print(f"[{session_id}] [CHORD] After normalize (first 40): {normalized_chords[:40]}")
             print(f"[{session_id}] Chord normalization: {n_unique_before} -> {n_unique_after} unique chords (key={final_key})")
 
-            # 4.55 ★ コード検証: 音声クロマ × music21 で予測コードを照合・補正
+            # 4.55 ★ クロマベースのコード検証
+            # BTCの予測を音声クロマと照合し、スコアが低いビートを補正
+            pre_verify_chords = [e["chord"] for e in structured]
             try:
                 from chord_verifier import verify_and_correct_chords
-                
-                # ギターステム or 原音でクロマ照合
-                verify_audio = wav_path
-                htdemucs_dir = session_dir / "htdemucs"
-                if htdemucs_dir.exists():
-                    for cand in htdemucs_dir.iterdir():
-                        if cand.is_dir() and (cand / "other.wav").exists():
-                            verify_audio = cand / "other.wav"
-                            break
-                
-                pre_verify_chords = [e["chord"] for e in structured]
+                import time as _time
+                t_verify = _time.time()
                 verified_chords, verify_stats = verify_and_correct_chords(
                     pre_verify_chords,
                     v_time,
-                    str(verify_audio),
+                    str(wav_path),
                     final_key,
+                    correction_threshold=0.15,  # 0.25→0.15: 低スコアのみ補正対象
+                    min_improvement=0.30,        # 0.15→0.30: 30%以上の改善がある場合のみ置換
                 )
-                
                 # 補正をstructuredに反映
                 for i, entry in enumerate(structured):
-                    entry["chord"] = verified_chords[i]
-                
-                n_verified = len(set(verified_chords) - {"N.C."})
-                print(f"[{session_id}] [CHORD] After verify: {n_verified} unique, "
-                      f"corrections={verify_stats['corrections']}, avg_score={verify_stats['avg_score']:.3f}")
-                perf_log.append(f"Chord verify: {verify_stats['corrections']} corrections, "
-                               f"avg_score={verify_stats['avg_score']:.3f}")
+                    if i < len(verified_chords):
+                        entry["chord"] = verified_chords[i]
+                dt_verify = _time.time() - t_verify
+                print(f"[{session_id}] [CHORD] Chroma verify: {verify_stats['corrections']} corrections, "
+                      f"avg_score={verify_stats['avg_score']:.3f}, {dt_verify:.1f}s")
+                perf_log.append(f"Chroma verify: {verify_stats['corrections']} corrections, "
+                               f"avg_score={verify_stats['avg_score']:.3f}, {dt_verify:.1f}s")
             except Exception as e:
-                print(f"[{session_id}] [CHORD] Verification skipped: {e}")
+                print(f"[{session_id}] [CHORD] Chroma verify skipped: {e}")
                 import traceback; traceback.print_exc()
-                perf_log.append(f"Chord verify: skipped ({e})")
+                perf_log.append(f"Chroma verify: skipped ({e})")
+
+            # 4.56 ★ ChatterFilter は廃止
+            # BTC は正確に C G Am F を検出しており、フィルタで1拍コードを消すと
+            # 「C G Am F C G Am F」が「C G Am F G F C G Am F」に崩れる。
+            # → 何もしない（コードはそのまま維持）
+            try:
+                snap_corrections = 0
+                changes_after_snap = sum(1 for i in range(1, len(structured))
+                                         if structured[i]["chord"] != structured[i-1]["chord"])
+                print(f"[{session_id}] [CHORD] ChatterFilter: disabled, changes -> {changes_after_snap}")
+                perf_log.append(f"Bar-snap: 0 corrected, changes -> {changes_after_snap}")
+            except Exception as e:
+                pass
+
+
+
 
             # 4.56 HMM遷移確率補正 (現在無効: Beatlesベンチマークで-16.7%の回帰を確認)
             # 品質正規化でコード型情報が失われるため、改良が必要
@@ -1233,83 +1467,28 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             #     print(f"[{session_id}] [CHORD] HMM skipped: {e}")
             #     perf_log.append(f"Chord HMM: skipped ({e})")
 
-        # 4.6 TABノート生成 -- 楽曲タイプに応じて分岐
+        # 4.6 TABノート -- スコアビュー削除のため、初期パイプラインではスキップ
+        # MusicXML/GP5は書き出し時にオンデマンド生成
+        chord_strum_notes = []
         if is_solo_guitar:
-            chord_strum_notes = []
             tab_source_notes = note_events if note_events else []
-            tab_data = notes_to_tab_data(tab_source_notes)
-            print(f"[{session_id}] [TAB] Solo guitar mode: using {len(tab_source_notes)} detected notes for TAB")
-            perf_log.append(f"TAB source: detected notes ({len(tab_source_notes)}) [solo_guitar]")
         else:
-            chord_strum_notes = generate_chord_strum_notes(structured, bpm=bpm)
+            if generate_chord_strum_notes:
+                chord_strum_notes = generate_chord_strum_notes(structured, bpm=bpm)
             tab_source_notes = chord_strum_notes
-            tab_data = notes_to_tab_data(chord_strum_notes)
-            print(f"[{session_id}] [TAB] Band mode: using {len(chord_strum_notes)} chord strum notes for TAB")
-            perf_log.append(f"TAB source: chord strum ({len(chord_strum_notes)}) [band]")
 
-        # Generate MusicXML
-        session_data["progress"] = "MusicXML譜面を生成中..."
-        save_session(session_id)
-        detected_key = session_data.get("key", "C major")
-        
-        # Technique detection (H/P/Slide/Bend/PM/DeadNote/Harmonic/Trill)
-        try:
-            from technique import detect_techniques
-            # Prefer Demucs guitar stem: htdemucs_6s/guitar.wav > htdemucs/other.wav > raw WAV
-            guitar_wav = str(wav_path)
-            # 1st: htdemucs_6s guitar.wav
-            _6s_dir = session_dir / "htdemucs_6s"
-            if _6s_dir.exists():
-                for _d in _6s_dir.iterdir():
-                    if _d.is_dir() and (_d / "guitar.wav").exists():
-                        guitar_wav = str(_d / "guitar.wav")
-                        break
-            # 2nd: htdemucs other.wav
-            if guitar_wav == str(wav_path):
-                _ht_dir = session_dir / "htdemucs"
-                if _ht_dir.exists():
-                    for _d in _ht_dir.iterdir():
-                        if _d.is_dir() and (_d / "other.wav").exists():
-                            guitar_wav = str(_d / "other.wav")
-                            break
-            tab_source_notes = detect_techniques(
-                tab_source_notes, wav_path=guitar_wav, beats=v_time, bpm=bpm
-            )
-            n_tech = sum(1 for n in tab_source_notes if n.get("technique"))
-            print(f"[{session_id}] [TECHNIQUE] Detected {n_tech} techniques in {len(tab_source_notes)} notes")
-            perf_log.append(f"Techniques: {n_tech} detected")
-        except Exception as e:
-            print(f"[{session_id}] [TECHNIQUE] Skipped: {e}")
-            perf_log.append(f"Techniques: skipped ({e})")
-        
-        xml_notes = tab_source_notes if tab_source_notes else note_events
-        xml_content = notes_to_musicxml(
-            xml_notes, 
-            beats=v_time,
-            chords=structured,
-            lyrics=lyrics_data,
-            key=detected_key,
-            title=session_data.get("filename", session_id),
-            bpm=bpm,
-        )
-        
-        # Save artifacts
+        # Save notes.json (for later on-demand MusicXML/GP5 export)
         notes_json_path = session_dir / "notes.json"
         with open(notes_json_path, "w", encoding="utf-8") as f:
             json.dump({
                 "notes": note_events,
-                "tab": tab_data,
                 "song_type": song_type,
                 "tab_source": "detected_notes" if is_solo_guitar else "chord_strum",
                 "tab_source_count": len(tab_source_notes),
             }, f, indent=2)
-            
-        musicxml_path = session_dir / "sheet.musicxml"
-        with open(musicxml_path, "w", encoding="utf-8") as f:
-            f.write(xml_content)
-            
-        perf_log.append(f"MusicXML: generated (tab_source={len(tab_source_notes)}, basic_pitch={len(note_events)}, type={song_type})")
-        session_data["has_notes"] = True
+
+        perf_log.append(f"MusicXML: deferred (on-demand export)")
+        session_data["has_notes"] = bool(note_events or chord_strum_notes)
         
         # 5. Build Chord Sheet
         sheet_lines = [f"# {session_id} - NextChord Sheet", f"Key: {session_data.get('key', 'Unknown')}\n"]
@@ -1336,6 +1515,23 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         print(f"[{session_id}] ★ perf.log saved to {perf_path}")
         
         _update_step(session_data, "postprocess", f"[OK] 譜面生成 ({t_total:.0f}s)")
+        
+        # === MP3変換（ブラウザ再生用）===
+        # WAV (44MB+) をそのままブラウザに送るとメモリ不足でクラッシュするため、
+        # MP3 (~4MB) に変換してブラウザ再生用に提供する
+        mp3_path = session_dir / "playback.mp3"
+        if not mp3_path.exists():
+            import subprocess, os
+            ffmpeg = os.getenv("FFMPEG_PATH", "ffmpeg")
+            try:
+                subprocess.run(
+                    [ffmpeg, "-y", "-i", str(wav_path), "-b:a", "192k", str(mp3_path)],
+                    check=True, capture_output=True, timeout=60
+                )
+                print(f"[{session_id}] [MP3] Converted for browser playback: {mp3_path.stat().st_size // 1024}KB")
+            except Exception as e:
+                print(f"[{session_id}] [MP3] Conversion failed: {e} (browser will use WAV)")
+        
         session_data["status"] = SessionStatus.COMPLETED
         session_data["progress"] = "完了"
         save_session(session_id)

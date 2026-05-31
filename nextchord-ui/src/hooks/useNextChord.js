@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { transposeChord } from "../utils/musicUtils";
 
 const API_BASE = import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000";
@@ -13,7 +13,7 @@ export function useNextChord() {
   const [currentTime, setCurrentTime] = useState(0);
   const [currentChord, setCurrentChord] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
-  const [viewMode, setViewMode] = useState("tab");
+  const [viewMode, setViewMode] = useState("text");
 
   // Premium Controls State
   const [transpose, setTranspose] = useState(0);
@@ -37,6 +37,11 @@ export function useNextChord() {
   const [scoreVersion, setScoreVersion] = useState(0);
   const [isRegenerating, setIsRegenerating] = useState(false);
   const [showTechniques, setShowTechniques] = useState(true);
+
+  // --- Undo/Redo 履歴 ---
+  const editHistoryRef = useRef([]);   // [{data, displayPhrases}]
+  const editRedoRef = useRef([]);
+  const MAX_UNDO = 50;
 
   // テーマ切替
   const [theme, setTheme] = useState(() => {
@@ -172,15 +177,23 @@ export function useNextChord() {
         data: result.structured_data,
         lyricsPhrases: result.lyrics_phrases || [],
         displayPhrases: result.display_phrases || [],
-        audioUrl: `${API_BASE}/files/${sid}/converted.wav`,
+        barPositions: result.bar_positions || null,
+        audioUrl: null,  // OOM防止: 最初はnull
         hasNotes: result.has_notes
       });
+      setStatus(STATUS.COMPLETED);
       try {
         const wRes = await fetch(`${API_BASE}/result/${sid}/waveform`);
         const wData = await wRes.json();
         setWaveform(wData.peaks || []);
       } catch { }
-      setStatus(STATUS.COMPLETED);
+      // 音声URLは500ms遅延でセット（レンダリング完了を待つ → OOM防止）
+      setTimeout(() => {
+        setSession(prev => prev ? {
+          ...prev,
+          audioUrl: prev.audioUrl || `${API_BASE}/files/${sid}/playback.mp3`
+        } : prev);
+      }, 500);
     } catch (err) {
       setStatus(STATUS.FAILED);
       setProgressMsg("セッションの復元に失敗しました。サーバーがリロードされた可能性があります。");
@@ -250,9 +263,10 @@ export function useNextChord() {
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = playbackRate; }, [playbackRate]);
   useEffect(() => { if (audioRef.current) audioRef.current.volume = volume / 100; }, [volume]);
 
+  const sessionAudioUrl = session?.audioUrl;
   useEffect(() => {
-    if (session?.audioUrl && audioRef.current) {
-      const src = vocalCancel && hasCleanAudio ? session.audioUrl.replace('converted.wav', 'clean.wav') : session.audioUrl;
+    if (sessionAudioUrl && audioRef.current) {
+      const src = vocalCancel && hasCleanAudio ? sessionAudioUrl.replace('playback.mp3', 'clean.wav').replace('converted.wav', 'clean.wav') : sessionAudioUrl;
       if (audioRef.current.src !== src) {
         const t = audioRef.current.currentTime;
         audioRef.current.src = src;
@@ -260,7 +274,7 @@ export function useNextChord() {
         if (isPlaying) audioRef.current.play();
       }
     }
-  }, [vocalCancel, hasCleanAudio, session]);
+  }, [vocalCancel, hasCleanAudio, sessionAudioUrl]);
 
   const drawWaveform = (canvas, data, currTime, duration) => {
     const ctx = canvas.getContext("2d");
@@ -285,23 +299,33 @@ export function useNextChord() {
     try {
       const resData = await fetch(`${API_BASE}/result/${sid}`);
       const result = await resData.json();
+      // まず結果データのみ設定（audioUrlはまだ設定しない → レンダリング優先）
       setSession(prev => ({
         ...prev,
         result,
         data: result.structured_data,
         lyricsPhrases: result.lyrics_phrases || [],
         displayPhrases: result.display_phrases || [],
-        audioUrl: prev?.audioUrl || `${API_BASE}/files/${sid}/converted.wav`,
+        barPositions: result.bar_positions || null,
+        audioUrl: null,  // 最初はnull（レンダリング後に遅延ロード）
         hasNotes: result.has_notes,
         fileName: result.filename || prev?.fileName,
         artist: result.artist || prev?.artist
       }));
       setStatus(STATUS.COMPLETED);
+      // 波形データ取得
       try {
         const wRes = await fetch(`${API_BASE}/result/${sid}/waveform`);
         const wData = await wRes.json();
         setWaveform(wData.peaks || []);
       } catch { }
+      // 音声URLは500ms遅延でセット（レンダリング完了を待つ → OOM防止）
+      setTimeout(() => {
+        setSession(prev => prev ? {
+          ...prev,
+          audioUrl: prev.audioUrl || `${API_BASE}/files/${sid}/playback.mp3`
+        } : prev);
+      }, 500);
     } catch (err) {
       console.error("[SSE] Failed to fetch result:", err);
       setStatus(STATUS.FAILED);
@@ -674,8 +698,82 @@ export function useNextChord() {
     showToast(`転調を ${newVal > 0 ? '+' : ''}${newVal} に設定しました`);
   };
 
+  // --- 編集前の状態をアンドゥ履歴に保存 ---
+  const pushUndo = () => {
+    if (!session) return;
+    editHistoryRef.current.push({
+      data: session.data ? JSON.parse(JSON.stringify(session.data)) : null,
+      displayPhrases: session.displayPhrases ? JSON.parse(JSON.stringify(session.displayPhrases)) : null,
+    });
+    if (editHistoryRef.current.length > MAX_UNDO) editHistoryRef.current.shift();
+    editRedoRef.current = []; // 新しい編集でredoをクリア
+  };
+
+  const handleUndo = useCallback(() => {
+    if (editHistoryRef.current.length === 0) {
+      showToast('これ以上アンドゥできません', 'info');
+      return;
+    }
+    // 現在の状態をredoスタックに保存
+    if (session) {
+      editRedoRef.current.push({
+        data: session.data ? JSON.parse(JSON.stringify(session.data)) : null,
+        displayPhrases: session.displayPhrases ? JSON.parse(JSON.stringify(session.displayPhrases)) : null,
+      });
+    }
+    const prev = editHistoryRef.current.pop();
+    setSession(s => ({
+      ...s,
+      data: prev.data || s.data,
+      displayPhrases: prev.displayPhrases || s.displayPhrases,
+    }));
+    showToast('↩ アンドゥしました');
+    // サーバーにも反映
+    if (prev.data) saveChordEdits(prev.data);
+    if (prev.displayPhrases) saveLyricEdits(prev.displayPhrases);
+  }, [session?.data, session?.displayPhrases]);
+
+  const handleRedo = useCallback(() => {
+    if (editRedoRef.current.length === 0) {
+      showToast('リドゥできません', 'info');
+      return;
+    }
+    // 現在の状態をundoスタックに保存
+    if (session) {
+      editHistoryRef.current.push({
+        data: session.data ? JSON.parse(JSON.stringify(session.data)) : null,
+        displayPhrases: session.displayPhrases ? JSON.parse(JSON.stringify(session.displayPhrases)) : null,
+      });
+    }
+    const next = editRedoRef.current.pop();
+    setSession(s => ({
+      ...s,
+      data: next.data || s.data,
+      displayPhrases: next.displayPhrases || s.displayPhrases,
+    }));
+    showToast('↪ リドゥしました');
+    if (next.data) saveChordEdits(next.data);
+    if (next.displayPhrases) saveLyricEdits(next.displayPhrases);
+  }, [session?.data, session?.displayPhrases]);
+
+  // Ctrl+Z / Ctrl+Y キーボードショートカット
+  useEffect(() => {
+    const handleUndoKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+        e.preventDefault();
+        handleUndo();
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+    window.addEventListener('keydown', handleUndoKey);
+    return () => window.removeEventListener('keydown', handleUndoKey);
+  }, [handleUndo, handleRedo]);
+
   const handleChordEdit = (index, newChord) => {
     if (!session?.data) return;
+    pushUndo();
     const newData = [...session.data];
     if (newChord === '' || newChord === 'N.C.') {
       newData[index] = { ...newData[index], chord: 'N.C.', _edited: true };
@@ -723,6 +821,7 @@ export function useNextChord() {
 
   const handleLyricEdit = (startTime, newText) => {
     if (!session?.displayPhrases) return;
+    pushUndo();
     const newPhrases = session.displayPhrases.map(p => {
       if (Math.abs(p.start - startTime) < 0.2) {
         return { ...p, text: newText };
@@ -776,7 +875,7 @@ export function useNextChord() {
     setIsPlaying(false); setSession(null); setStatus(STATUS.IDLE);
     localStorage.removeItem('nextchord-last-session');
     setCurrentTime(0); setCurrentChord(''); setWaveform([]);
-    setProgressMsg('Preparing...'); setTranspose(0); setViewMode('tab');
+    setProgressMsg('Preparing...'); setTranspose(0); setViewMode('text');
   };
 
   const handleGoHome = () => {

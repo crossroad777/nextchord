@@ -1,9 +1,10 @@
-import React from "react";
+import React, { useState, useCallback } from "react";
 import {
   Play, Pause, Share2, Heart, MoreHorizontal,
   ChevronRight, ChevronLeft, Clock, Square,
   Repeat, Guitar, Music, Layout, FileCode, AlignLeft,
-  Download, RefreshCw, ChevronDown, Zap, Disc, FileText
+  Download, RefreshCw, ChevronDown, Zap, Disc, FileText,
+  Volume2, VolumeX
 } from 'lucide-react';
 
 const TUNINGS = [
@@ -14,6 +15,52 @@ const TUNINGS = [
   { value: 'open_d', label: 'Open D' },
   { value: 'dadgad', label: 'DADGAD' },
 ];
+
+/** 音量コントロール */
+function VolumeControl({ audioRef }) {
+    const [volume, setVolume] = useState(1);
+    const [muted, setMuted] = useState(false);
+
+    const handleVolumeChange = useCallback((e) => {
+        const v = parseFloat(e.target.value);
+        setVolume(v);
+        setMuted(v === 0);
+        if (audioRef.current) audioRef.current.volume = v;
+    }, [audioRef]);
+
+    const toggleMute = useCallback(() => {
+        const newMuted = !muted;
+        setMuted(newMuted);
+        if (audioRef.current) audioRef.current.volume = newMuted ? 0 : volume || 1;
+    }, [muted, volume, audioRef]);
+
+    const displayVol = muted ? 0 : Math.round(volume * 100);
+    const Icon = muted || volume === 0 ? VolumeX : Volume2;
+
+    return (
+        <div className="w-[120px] flex-shrink-0 flex flex-col justify-center gap-1">
+            <div className="flex items-center justify-between">
+                <button
+                    onClick={toggleMute}
+                    className="text-[8px] font-black text-[var(--gf-text-dim)] uppercase tracking-wider flex items-center gap-1 hover:text-[var(--gf-text)] transition-colors"
+                    aria-label={muted ? 'Unmute' : 'Mute'}
+                >
+                    <Icon size={10} /> Volume
+                </button>
+                <span className="text-[9px] font-mono font-black text-[var(--gf-primary)]">{displayVol}%</span>
+            </div>
+            <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={muted ? 0 : volume}
+                onChange={handleVolumeChange}
+                className="w-full h-1 bg-[var(--gf-surface-3)] rounded-lg appearance-none cursor-pointer accent-[var(--gf-primary)]"
+            />
+        </div>
+    );
+}
 
 export function ResultHeader({
   session,
@@ -139,6 +186,9 @@ export function ResultHeader({
             </div>
           </div>
 
+          {/* VOLUME (コンパクト) */}
+          <VolumeControl audioRef={audioRef} />
+
           {/* LATENCY (コンパクト) */}
           <div className="w-[140px] flex-shrink-0 flex flex-col justify-center gap-1">
             <div className="flex items-center justify-between">
@@ -226,32 +276,13 @@ export function ResultHeader({
         <div className="nc-ribbon-divider" />
 
         {/* View Mode Buttons */}
-        <button onClick={() => setViewMode('chords')} className={`nc-ribbon-item ${viewMode === 'chords' ? 'active' : ''}`} aria-label="Grid view" aria-pressed={viewMode === 'chords'}>
-          <Layout className="nc-ribbon-icon" size={20} />
-          <span className="nc-ribbon-label">グリッド</span>
-        </button>
-        <button onClick={() => setViewMode('tab')} className={`nc-ribbon-item ${viewMode === 'tab' ? 'active' : ''}`} aria-label="Score view" aria-pressed={viewMode === 'tab'}>
-          <FileCode className="nc-ribbon-icon" size={20} />
-          <span className="nc-ribbon-label">スコア</span>
-        </button>
         <button onClick={() => setViewMode('text')} className={`nc-ribbon-item ${viewMode === 'text' ? 'active' : ''}`} aria-label="Text view" aria-pressed={viewMode === 'text'}>
           <AlignLeft className="nc-ribbon-icon" size={20} />
           <span className="nc-ribbon-label">テキスト</span>
         </button>
 
-        <div className="nc-ribbon-divider" />
-        {/* Technique Toggle */}
-        <button onClick={() => setShowTechniques(!showTechniques)} className={`nc-ribbon-item ${showTechniques ? 'active' : ''}`} title="Show techniques (H/P/Slide/Bend)" aria-label="Toggle techniques" aria-pressed={showTechniques}>
-          <Zap className="nc-ribbon-icon" size={20} />
-          <span className="nc-ribbon-label">テクニック</span>
-        </button>
 
-        <div className="nc-ribbon-divider" />
-        {/* Regenerate Score */}
-        <button onClick={handleRegenerateScore} className={`nc-ribbon-item ${isRegenerating ? 'opacity-50 pointer-events-none' : ''}`} title="Apply chord/lyric edits to score" aria-label="Regenerate score" disabled={isRegenerating}>
-          <RefreshCw className={`nc-ribbon-icon ${isRegenerating ? 'animate-spin' : ''}`} size={20} />
-          <span className="nc-ribbon-label">{isRegenerating ? '生成中...' : '譜面に反映'}</span>
-        </button>
+        <div style={{ flex: 1 }} />
 
         {/* Export */}
         <button onClick={() => setShowMoreMenu(!showMoreMenu)} className="nc-ribbon-item relative" aria-label="Export" aria-expanded={showMoreMenu} aria-haspopup="true">

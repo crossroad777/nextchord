@@ -3,10 +3,9 @@ import {
   Music, Check, X, UploadCloud, AlertTriangle, FileText,
   Sun, Moon
 } from 'lucide-react';
-import { BeatGrid } from "./components/BeatGrid";
 import { InstrumentPanel } from "./components/InstrumentPanel";
-import { TabView } from "./components/TabView";
 import { ChordLyricsView } from "./components/ChordLyricsView";
+import { ChordProView } from "./components/ChordProView";
 import { UploadView } from "./components/UploadView";
 import { ProcessingView } from "./components/ProcessingView";
 import { ResultHeader } from "./components/ResultHeader";
@@ -31,6 +30,8 @@ export default function NextChordApp() {
 
   // Track favorite bounce animation
   const [favBounce, setFavBounce] = useState(false);
+  // ホバー中のコード（右パネルに優先表示）
+  const [hoveredChord, setHoveredChord] = useState(null);
   const wrappedToggleFavorite = useCallback(() => {
     app.toggleFavorite();
     setFavBounce(true);
@@ -42,7 +43,6 @@ export default function NextChordApp() {
 
     return (
       <div className="flex h-full bg-[var(--gf-bg)] overflow-hidden">
-        {/* Main Content Column */}
         <div className="flex-1 flex flex-col overflow-hidden">
           <ResultHeader
             session={app.session}
@@ -85,38 +85,33 @@ export default function NextChordApp() {
             timelineProgressRef={app.timelineProgressRef}
             timelineHandleRef={app.timelineHandleRef}
           />
-
-          {/* Main Grid content */}
-          <div className={`flex-1 bg-[var(--gf-bg)] overflow-hidden ${app.viewMode === 'tab' ? '' : 'overflow-y-auto py-10 px-8'}`}>
-            {app.viewMode === "chords" && (
-              <div className="nc-view-enter">
-                <BeatGrid data={app.session.data} currentTime={app.currentTime - (app.latency / 1000)} onSeek={app.handleSeek} transpose={app.transpose - app.capo} onChordEdit={app.handleChordEdit} />
-              </div>
-            )}
-            {app.viewMode === "text" && (
-              <div className="nc-view-enter">
-                <ChordLyricsView data={app.session.data} lyricsPhrases={app.session.lyricsPhrases} displayPhrases={app.session.displayPhrases} currentTime={app.currentTime - (app.latency / 1000)} onSeek={app.handleSeek} onChordEdit={app.handleChordEditByTime} onLyricEdit={app.handleLyricEdit} transpose={app.transpose - app.capo} title={app.session.fileName} artist={app.session.artist} />
-              </div>
-            )}
-            {/* TabViewは常にマウント（AlphaTab再初期化を防止） */}
-            <div style={{ display: app.viewMode === 'tab' ? 'block' : 'none', height: '100%' }}>
-              <TabView
-                sessionId={app.session.id}
+          <div className="flex-1 bg-[var(--gf-bg)] overflow-hidden">
+            {app.session.result?.chordpro_text ? (
+              <ChordProView
+                chordproText={app.session.result.chordpro_text}
                 currentTime={app.currentTime - (app.latency / 1000)}
-                isPlaying={app.isPlaying}
                 onSeek={app.handleSeek}
-                isLooping={app.isLooping}
-                loopRegion={app.loopRegion}
-                transpose={app.transpose}
-                capo={app.capo}
-                tuning={app.tuning}
-                playbackRate={app.playbackRate}
-                visible={app.viewMode === 'tab'}
-                scoreVersion={app.scoreVersion}
-                showTechniques={app.showTechniques}
+                transpose={app.transpose - app.capo}
+                title={app.session.fileName}
+                artist={app.session.artist}
+              />
+            ) : (
+              <div className="overflow-y-auto py-10 px-8 h-full">
+                <div className="nc-view-enter">
+                  <ChordLyricsView data={app.session.data} lyricsPhrases={app.session.lyricsPhrases} displayPhrases={app.session.displayPhrases} barPositions={app.session.barPositions} currentTime={app.currentTime - (app.latency / 1000)} onSeek={app.handleSeek} onChordEdit={app.handleChordEditByTime} onLyricEdit={app.handleLyricEdit} onChordHover={setHoveredChord} transpose={app.transpose - app.capo} title={app.session.fileName} artist={app.session.artist} />
+                </div>
+              </div>
+            )}
+          </div>
+          {(app.instrument === 'guitar' || app.instrument === 'piano') && app.viewMode !== 'tab' && (
+            <div className="nc-instrument-panel">
+              <InstrumentPanel
+                currentChord={hoveredChord ?? app.currentChord}
+                transpose={app.transpose - app.capo}
+                instrument={app.instrument}
               />
             </div>
-          </div>
+          )}
         </div>
       </div>
     );

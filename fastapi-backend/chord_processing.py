@@ -181,6 +181,87 @@ def _beat_majority_chords(v_time, seg_starts, seg_labels):
     return beat_chords
 
 
+def _smooth_beat_chords(beat_chords, beats_per_bar=4, min_beats=3):
+    """
+    ビート列のコード配列をスムージングする。
+    
+    min_beats拍未満しか続かないコード変化を前後の文脈に基づいて吸収する。
+    例: [C, C, G, C, C, C, G, G] → [C, C, C, C, C, C, G, G]
+         (1拍だけのGは前後のCに吸収)
+    
+    ただし、前後のコードが異なる場合は「橋渡し」として残す:
+    例: [C, C, G, G, Am, Am, ...] → そのまま（Gは十分長く、遷移は正当）
+    
+    Parameters
+    ----------
+    beat_chords : list of str
+    beats_per_bar : int
+    min_beats : int  最小拍数（これ未満のコードは吸収候補）
+    """
+    if len(beat_chords) <= 2:
+        return beat_chords
+    
+    result = list(beat_chords)
+    changed = True
+    passes = 0
+    
+    while changed and passes < 3:
+        changed = False
+        passes += 1
+        
+        # コードの連続区間(run)を検出
+        runs = []  # [(start_idx, length, chord), ...]
+        i = 0
+        while i < len(result):
+            chord = result[i]
+            j = i
+            while j < len(result) and result[j] == chord:
+                j += 1
+            runs.append((i, j - i, chord))
+            i = j
+        
+        # 短いrun(min_beats未満)を吸収
+        new_result = list(result)
+        for ri, (start, length, chord) in enumerate(runs):
+            if chord == "N.C.":
+                continue
+            if length >= min_beats:
+                continue
+            
+            # 前後のrunを取得
+            prev_chord = runs[ri - 1][2] if ri > 0 else None
+            next_chord = runs[ri + 1][2] if ri < len(runs) - 1 else None
+            prev_len = runs[ri - 1][1] if ri > 0 else 0
+            next_len = runs[ri + 1][1] if ri < len(runs) - 1 else 0
+            
+            # 前後が同じコード → 明らかにノイズ → 前後のコードで埋める
+            if prev_chord and prev_chord == next_chord and prev_chord != "N.C.":
+                for k in range(start, start + length):
+                    new_result[k] = prev_chord
+                changed = True
+                continue
+            
+            # 前後のうち長い方に吸収（1拍のみの場合）
+            if length == 1:
+                if prev_len >= min_beats and prev_chord and prev_chord != "N.C.":
+                    new_result[start] = prev_chord
+                    changed = True
+                elif next_len >= min_beats and next_chord and next_chord != "N.C.":
+                    new_result[start] = next_chord
+                    changed = True
+        
+        result = new_result
+    
+    # 統計
+    n_changes_before = sum(1 for i in range(1, len(beat_chords)) if beat_chords[i] != beat_chords[i-1])
+    n_changes_after = sum(1 for i in range(1, len(result)) if result[i] != result[i-1])
+    if n_changes_before != n_changes_after:
+        print(f"[ChordSmooth2] Beat chord changes: {n_changes_before} -> {n_changes_after} "
+              f"(absorbed {n_changes_before - n_changes_after} short transitions)")
+    
+    return result
+
+
 # =========================================================================
 # エンハーモニック表記マッピング
 # =========================================================================

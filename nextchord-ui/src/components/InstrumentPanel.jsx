@@ -450,3 +450,5 @@ export const InstrumentPanel = ({ currentChord, transpose = 0, instrument = "gui
         </div>
     );
 };
+
+export { GuitarDiagram, findChordShape, PianoKeyboard, getPianoNotes };

@@ -98,7 +98,9 @@ def notes_to_gp5(
 
     # --- Build GP5 Song ---
     song = gp.Song()
-    song.title = title or "NextChord"
+    # guitarpro uses cp1252 encoding internally; sanitize non-Latin chars
+    safe_title = _sanitize_for_gp(title) if title else "NextChord"
+    song.title = safe_title
     song.artist = "NextChord"
     song.tempo = int(bpm)
 
@@ -611,3 +613,15 @@ def _fifths_to_gp_key(fifths: int) -> gp.KeySignature:
         5: gp.KeySignature.BMajor,
     }
     return mapping.get(fifths, gp.KeySignature.CMajor)
+
+
+def _sanitize_for_gp(text: str) -> str:
+    """GP5のcp1252エンコーディングに対応するため、エンコード不可文字を置換。"""
+    if not text:
+        return ""
+    try:
+        text.encode('cp1252')
+        return text
+    except UnicodeEncodeError:
+        # cp1252でエンコードできない文字を'?'に置換
+        return text.encode('cp1252', errors='replace').decode('cp1252')

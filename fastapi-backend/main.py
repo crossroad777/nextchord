@@ -16,7 +16,7 @@ torch.backends.cudnn.enabled = False
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
@@ -382,6 +382,11 @@ class ResultResponse(BaseModel):
     lyrics_phrases: Optional[list] = None
     display_phrases: Optional[list] = None
     has_notes: Optional[bool] = False
+    chordpro_text: Optional[str] = None
+    beat_times: Optional[list] = None
+    downbeats: Optional[list] = None
+    bar_positions: Optional[list] = None
+    beats_per_bar: Optional[int] = None
 
 class YouTubeRequest(BaseModel):
     url: str
@@ -892,6 +897,22 @@ async def get_result(session_id: str):
                 result["display_phrases"] = display_phrases
             except Exception as e:
                 print(f"Warning: phrase_processor failed for {session_id}: {e}")
+    # ChordProテキストを最新ロジックで毎回再生成
+    chordpro_text = ""
+    if structured_data:
+        try:
+            from chordpro_converter import structured_to_chordpro
+            chordpro_text = structured_to_chordpro(
+                structured_data,
+                lyrics_phrases=result.get("lyrics_phrases"),
+                display_phrases=display_phrases,
+                title="",
+                artist=session.get("artist", ""),
+                key=session.get("key", "")
+            )
+        except Exception as e:
+            print(f"Warning: ChordPro conversion failed for {session_id}: {e}")
+            chordpro_text = result.get("chordpro_text", "")
 
     return ResultResponse(
         session_id=session_id,
@@ -906,7 +927,12 @@ async def get_result(session_id: str):
         structured_data=structured_data,
         lyrics_phrases=result.get("lyrics_phrases", []),
         display_phrases=display_phrases,
-        has_notes=session.get("has_notes", False)
+        has_notes=session.get("has_notes", False),
+        chordpro_text=chordpro_text,
+        beat_times=result.get("beat_times"),
+        downbeats=result.get("downbeats"),
+        bar_positions=result.get("bar_positions"),
+        beats_per_bar=result.get("beats_per_bar"),
     )
 
 @app.patch("/result/{session_id}/chords")
@@ -1268,6 +1294,13 @@ async def get_file(session_id: str, filename: str):
         raise HTTPException(status_code=404, detail="セッションが見つかりません")
     
     session_dir = Path(sessions[session_id]["session_dir"])
+    
+    # ブラウザOOM防止: converted.wav を要求された場合、playback.mp3 があればそちらを返す
+    if filename == "converted.wav":
+        mp3_path = session_dir / "playback.mp3"
+        if mp3_path.exists():
+            return FileResponse(mp3_path, filename="playback.mp3", media_type="audio/mpeg")
+    
     file_path = session_dir / filename
     
     if not file_path.exists():
@@ -1751,12 +1784,48 @@ async def get_waveform(session_id: str):
     data = generate_waveform(str(wav_path), n_points=2000)
     return data
 
+
+@app.get("/chord-audio/{chord_name}")
+async def get_chord_audio(
+    chord_name: str,
+    octave: int = 4,
+    duration: float = 1.8,
+):
+    """
+    コード名から WAV 音声を生成して返す。
+    例: GET /chord-audio/Am7  → Am7 の音声 WAV
+    """
+    from chord_synth import synthesize_chord
+    from fastapi.responses import Response
+
+    # URLエンコードされた文字列を元に戻す
+    import urllib.parse
+    chord_name = urllib.parse.unquote(chord_name)
+
+    wav_bytes = synthesize_chord(chord_name, octave=octave, duration=duration)
+    return Response(
+        content=wav_bytes,
+        media_type="audio/wav",
+        headers={
+            "Cache-Control": "public, max-age=3600",
+            "Content-Disposition": f'inline; filename="{chord_name}.wav"',
+        }
+    )
+
+@app.get("/chord-test", response_class=HTMLResponse)
+async def chord_test_page():
+    """全コード音確認ページ（CORS問題を回避するためバックエンドから配信）"""
+    html_path = Path(__file__).parent / "chord_test.html"
+    return HTMLResponse(content=html_path.read_text(encoding="utf-8"))
+
+
 @app.get("/health")
 async def health_check():
     """
     ヘルスチェック
     """
     return {"status": "healthy", "version": "0.4.0", "demucs": "enabled", "whisper": type(whisper_model).__name__ if whisper_model else "None"}
+
 
 
 def run_pipeline_with_save(session_id: str, session_dir: Path, wav_path: Path):
@@ -1769,6 +1838,11 @@ def run_pipeline_with_save(session_id: str, session_dir: Path, wav_path: Path):
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend-dist"
 if FRONTEND_DIR.exists():
     from starlette.responses import HTMLResponse
+    # Windows Python の mimetypes が .js を text/plain と判定するバグを修正
+    import mimetypes
+    mimetypes.add_type("application/javascript", ".js")
+    mimetypes.add_type("application/javascript", ".mjs")
+    mimetypes.add_type("text/css", ".css")
     # 静的アセット (js, css, images, fonts) を配信
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="static-assets")
     # public ディレクトリのファイル (favicon, fonts, soundfont 等)
@@ -1783,7 +1857,9 @@ if FRONTEND_DIR.exists():
         # APIパスは除外（既にルーティング済み）
         file_path = FRONTEND_DIR / full_path
         if file_path.exists() and file_path.is_file():
-            return FileResponse(str(file_path))
+            import mimetypes
+            mime, _ = mimetypes.guess_type(str(file_path))
+            return FileResponse(str(file_path), media_type=mime or "application/octet-stream")
         return HTMLResponse((FRONTEND_DIR / "index.html").read_text())
     
     print(f"[OK] Frontend serving from: {FRONTEND_DIR}")
