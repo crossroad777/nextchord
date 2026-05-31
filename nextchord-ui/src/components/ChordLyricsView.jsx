@@ -696,11 +696,14 @@ export function ChordLyricsView({
             if (nextPhraseStart) {
                 const gap = nextPhraseStart - phrase.end;
                 if (gap < 1.0) {
-                    // Contiguous phrases: extend by 2 bars to capture trailing chords
-                    // (e.g. G chord after "抱きしめて" before next phrase starts)
-                    effectiveEnd = Math.max(phrase.end, phrase.end + barDur * 2);
+                    // Contiguous phrases: don't extend beyond next phrase start
+                    // Each phrase should capture only its own chords (4-bar rule)
+                    effectiveEnd = nextPhraseStart;
+                } else if (gap < barDur * 2) {
+                    // Small gap: extend to midpoint between phrases
+                    effectiveEnd = phrase.end + gap / 2;
                 } else {
-                    // Gap between phrases: use original conservative formula
+                    // Large gap between phrases: use conservative formula
                     effectiveEnd = Math.max(phrase.end, nextPhraseStart - barDur);
                 }
             }
