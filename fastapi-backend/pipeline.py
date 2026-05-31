@@ -572,11 +572,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 word_timestamps=True,
                                 condition_on_previous_text=False,
                                 no_speech_threshold=0.3,
-                                vad_filter=True,
-                                vad_parameters=dict(
-                                    min_silence_duration_ms=300,
-                                    speech_pad_ms=200,
-                                ),
+                                vad_filter=False,
                                 beam_size=5,
                                 temperature=0.0,
                             )
