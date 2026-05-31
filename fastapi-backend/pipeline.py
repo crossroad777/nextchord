@@ -570,13 +570,12 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 str(wav),
                                 language="ja",
                                 word_timestamps=True,
-                                initial_prompt="日本語の歌詞。",
-                                condition_on_previous_text=True,
+                                condition_on_previous_text=False,
                                 no_speech_threshold=0.3,
                                 vad_filter=True,
                                 vad_parameters=dict(
-                                    min_silence_duration_ms=300,  # 短い息継ぎは分割しない
-                                    speech_pad_ms=200,            # 音声の前後に余裕
+                                    min_silence_duration_ms=300,
+                                    speech_pad_ms=200,
                                 ),
                                 beam_size=5,
                                 temperature=0.0,
