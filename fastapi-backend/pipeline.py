@@ -1321,8 +1321,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             from lyrics_postprocess import clean_hallucinated_endings
             # ハルシネーション除去 -> フレーズ分割
             cleaned_phrases = clean_hallucinated_endings(lyrics_phrases)
-            display_phrases = process_phrases_for_display(cleaned_phrases, target_chars=30)
-            perf_log.append(f"Display phrases: {len(display_phrases)} (from {len(lyrics_phrases)} raw, {len(cleaned_phrases)} after cleanup)")
+            display_phrases = process_phrases_for_display(
+                cleaned_phrases, target_chars=30,
+                bar_positions=bar_positions
+            )
+            perf_log.append(f"Display phrases: {len(display_phrases)} (from {len(lyrics_phrases)} raw, {len(cleaned_phrases)} after cleanup, bars={'yes' if bar_positions else 'no'})")
         except Exception as e:
             perf_log.append(f"Warning: phrase_processor failed: {e}, using raw phrases")
 

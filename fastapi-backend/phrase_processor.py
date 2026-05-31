@@ -135,16 +135,23 @@ def _find_best_split(text: str, ideal_pos: int, boundaries: list[tuple[int, str,
     return best_pos
 
 
-def process_phrases_for_display(phrases: list[dict], target_chars: int = 30) -> list[dict]:
+def process_phrases_for_display(phrases: list[dict], target_chars: int = 30,
+                                 bar_positions: list[float] = None,
+                                 bars_per_line: int = 4) -> list[dict]:
     """
     lyrics_phrasesを処理してテキストビュー表示用フレーズに変換する。
+    
+    bar_positionsが提供された場合: 4小節区切りで時間ベースの分割
+    bar_positionsがない場合: 文字数ベースの分割（フォールバック）
     
     1. gap < 1sの連続フレーズを結合（ブロック化）
     2. 長いブロックをJanome形態素解析の単語境界で自然に再分割
     
     Args:
         phrases: [{"start": float, "end": float, "text": str}, ...]
-        target_chars: 目標文字数
+        target_chars: 目標文字数（フォールバック用）
+        bar_positions: 小節の開始時刻リスト（秒）
+        bars_per_line: 1行あたりの小節数（デフォルト4）
     
     Returns:
         [{"start": float, "end": float, "text": str}, ...]
@@ -175,7 +182,113 @@ def process_phrases_for_display(phrases: list[dict], target_chars: int = 30) -> 
     if cur["text"]:
         blocks.append(cur)
 
-    # Pass 2: 長いブロックを単語境界で再分割
+    # Pass 2: bar_positionsベース or 文字数ベースで再分割
+    if bar_positions and len(bar_positions) >= 2:
+        return _split_blocks_by_bars(blocks, bar_positions, bars_per_line)
+    else:
+        return _split_blocks_by_chars(blocks, target_chars)
+
+
+def _split_blocks_by_bars(blocks: list[dict], bar_positions: list[float],
+                          bars_per_line: int = 4) -> list[dict]:
+    """
+    4小節区切りの時間境界でブロックを分割する。
+    
+    各4小節窓（bar_positions[i*4] ~ bar_positions[(i+1)*4]）に
+    テキストが含まれる場合、時間比率でテキストを割り当てる。
+    """
+    result = []
+    
+    # 4小節ごとの時間窓を構築
+    line_boundaries = []
+    for i in range(0, len(bar_positions), bars_per_line):
+        start = bar_positions[i]
+        end_idx = i + bars_per_line
+        if end_idx < len(bar_positions):
+            end = bar_positions[end_idx]
+        else:
+            # 最後のグループ: 最後のbar + 推定bar長
+            if len(bar_positions) >= 2:
+                avg_bar_dur = (bar_positions[-1] - bar_positions[0]) / (len(bar_positions) - 1)
+            else:
+                avg_bar_dur = 2.5
+            remaining = len(bar_positions) - i
+            end = bar_positions[i] + avg_bar_dur * remaining
+        line_boundaries.append((start, end))
+    
+    for block in blocks:
+        text = block["text"]
+        block_start = block["start"]
+        block_end = block["end"]
+        block_dur = block_end - block_start
+        
+        if block_dur <= 0 or len(text) == 0:
+            result.append(block)
+            continue
+        
+        # このブロックに重なる4小節窓を特定
+        overlapping = []
+        for lb_start, lb_end in line_boundaries:
+            # ブロックと4小節窓の重なりを計算
+            overlap_start = max(block_start, lb_start)
+            overlap_end = min(block_end, lb_end)
+            if overlap_start < overlap_end:
+                overlapping.append((lb_start, lb_end, overlap_start, overlap_end))
+        
+        if len(overlapping) <= 1:
+            # 1つの4小節窓に収まる → そのまま
+            result.append(block)
+            continue
+        
+        # 複数の4小節窓にまたがる → 時間比率でテキストを分割
+        boundaries = _get_word_boundaries(text)
+        
+        pos = 0
+        for idx, (lb_start, lb_end, ov_start, ov_end) in enumerate(overlapping):
+            # この窓の時間比率
+            ratio_start = (ov_start - block_start) / block_dur
+            ratio_end = (ov_end - block_start) / block_dur
+            
+            # テキスト中の理想位置
+            ideal_start = int(ratio_start * len(text))
+            ideal_end = int(ratio_end * len(text))
+            
+            if idx == len(overlapping) - 1:
+                # 最後のチャンク: 残り全部
+                chunk_text = text[pos:]
+                if chunk_text:
+                    result.append({
+                        "start": round(ov_start, 3),
+                        "end": round(block_end, 3),
+                        "text": chunk_text,
+                    })
+                break
+            
+            # 自然な単語境界で分割
+            split_pos = _find_best_split(text, ideal_end, boundaries)
+            
+            # 進行しない場合は強制分割
+            if split_pos <= pos:
+                split_pos = min(ideal_end, len(text))
+            if split_pos <= pos:
+                split_pos = pos + max(1, len(text) // len(overlapping))
+            
+            chunk_text = text[pos:split_pos]
+            if chunk_text:
+                chunk_start = block_start + block_dur * (pos / len(text))
+                chunk_end = block_start + block_dur * (split_pos / len(text))
+                result.append({
+                    "start": round(chunk_start, 3),
+                    "end": round(chunk_end, 3),
+                    "text": chunk_text,
+                })
+            pos = split_pos
+    
+    return result
+
+
+def _split_blocks_by_chars(blocks: list[dict], target_chars: int = 30) -> list[dict]:
+    """文字数ベースのフォールバック分割（従来方式）"""
     result = []
     max_chars = target_chars + 5
 
