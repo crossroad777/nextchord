@@ -612,10 +612,11 @@ export function ChordLyricsView({
         };
 
         // ── Lyric phrases ─────────────────────────────────────────────────
-        // Prefer lyricsPhrases (has word timestamps) over displayPhrases
-        const rawPhrases = lyricsPhrases || displayPhrases || [];
+        // Use displayPhrases for text (hallucination-filtered, bar-split),
+        // lyricsPhrases only for word timestamps
+        const rawPhrases = displayPhrases || lyricsPhrases || [];
         const wordsLookup = {};
-        if (displayPhrases && lyricsPhrases) {
+        if (lyricsPhrases) {
             for (const lp of lyricsPhrases) {
                 const key = (lp.start ?? lp.startTime ?? 0).toFixed(2);
                 if (lp.words?.length) wordsLookup[key] = lp.words;
