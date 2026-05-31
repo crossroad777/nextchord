@@ -237,6 +237,27 @@ def _bpm_naturalness_score(bpm):
 
 
 
+def _fast_beat_detect(wav_path):
+    """librosaベースの高速ビート検出（madmom RNNBeatProcessorの代替）
+    
+    madmom RNNBeatProcessor (~45s) を librosa beat_track (~5s) で置き換え。
+    戻り値: beat_times (1D array) - 直接ビート時刻を返す（act変換不要）
+    """
+    import librosa
+    import numpy as np
+    import time as _time
+    t0 = _time.time()
+    try:
+        y, sr = librosa.load(str(wav_path), sr=22050, mono=True)
+        tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units='frames')
+        beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+        print(f"[BEATS] librosa beat_track: {len(beat_times)} beats, tempo={float(tempo) if hasattr(tempo,'__float__') else tempo}, {_time.time()-t0:.1f}s")
+        return beat_times
+    except Exception as e:
+        print(f"[BEATS] librosa beat_track failed: {e}, returning empty")
+        return np.array([])
+
+
 def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
     """
     コード抽出パイプラインをバックグラウンドで実行（究極の並列化・インプロセス）
@@ -534,8 +555,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             print(f"[{session_id}] [PIPELINE] Starting all tasks...")
             
             # CPU系タスクを一気に投入
-            futures['act'] = executor.submit(beat_processor, str(wav_path)) if beat_processor else None
-            futures['key_vec'] = executor.submit(key_processor, str(wav_path)) if key_processor else None
+            # Optimization 1: librosa beat_track (~5s) instead of madmom RNNBeatProcessor (~45s)
+            futures['act'] = executor.submit(_fast_beat_detect, wav_path)
+            # Optimization 2: key_processor deferred - submit only if chroma/chord keys disagree
+            futures['key_vec'] = None
             futures['chroma_chords'] = executor.submit(
                 _chroma_chords, wav_path, session_dir, session_id
             )
@@ -865,8 +888,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     try:
                         act = completed_future.result()
                         t_beats = time.time() - start_total
-                        perf_log.append(f"[OK] Beats: {t_beats:.1f}s (shape={act.shape if hasattr(act,'shape') else 'N/A'})")
-                        print(f"[{session_id}] [PERF] Beats done: {t_beats:.1f}s")
+                        # act is now beat_times (1D array) from _fast_beat_detect
+                        n_beats = len(act) if act is not None else 0
+                        perf_log.append(f"[OK] Beats (librosa): {t_beats:.1f}s ({n_beats} beats)")
+                        print(f"[{session_id}] [PERF] Beats done (librosa): {t_beats:.1f}s, {n_beats} beats")
                         _update_step(session_data, "beats", f"[OK] ビート検出 ({t_beats:.0f}s)")
                     except Exception as e:
                         perf_log.append(f"[FAIL] Beats: {type(e).__name__}: {e}")
@@ -1027,12 +1052,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         session_data["progress"] = f"解析中... (4/5) [BUILD] 譜面を生成中..."
         save_session(session_id)
         # 1. Beats
-        if act is not None and beat_tracker is not None:
-            beats_raw = beat_tracker(act)
+        # act is now beat_times (1D array) from _fast_beat_detect (librosa)
+        # No need for beat_tracker(act) - beat_times are already computed
+        if act is not None and len(act) > 0:
+            beats_raw = act  # Already beat_times from _fast_beat_detect
+            print(f"[{session_id}] [BEATS] Using librosa beat_times directly: {len(beats_raw)} beats")
         else:
-            print(f"[{session_id}] [WARN] madmom beat_tracker unavailable, using librosa fallback")
-            # NOTE: _chroma_chords内のlibrosa.loadとは別スレッドで実行されるため
-            # 意図的に共有せず独立してロードする（スレッド安全性のため）
+            print(f"[{session_id}] [WARN] _fast_beat_detect returned empty, using inline librosa fallback")
             y_beat, sr_beat = librosa.load(str(wav_path), sr=22050)
             tempo, beat_frames = librosa.beat.beat_track(y=y_beat, sr=sr_beat)
             beats_raw = librosa.frames_to_time(beat_frames, sr=sr_beat)
@@ -1057,7 +1083,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             seg_starts = v_time if len(v_time) > 0 else np.array([0.0])
             seg_labels = np.array(['N.C.'] * len(seg_starts))
 
-        # 2. Key
+        # 2. Key (deferred - madmom key_processor runs only if chroma/chord disagree)
+        # key_vec is None here due to optimization 2; key is set during consensus below
         if key_vec is not None:
             idx = int(key_vec.argmax())
             KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B']
@@ -1416,22 +1443,62 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         perf_log.append(f"Note events: {len(note_events)}")
         perf_log.append(f"Sections: {len(sections)}")
 
-        # 4.5 キー推定（3層: chroma > コード進行 > madmom）
+        # 4.5 キー推定（Optimization 2: chroma+chord一致時はmadmomスキップ）
         if structured:
-            madmom_key = session_data.get("key", "C major")
-            
             # (1) 音声chromaベースのキー推定（最も信頼できる）
             chroma_key = estimate_key_from_audio(str(wav_path))
             
             # (2) コード進行からのキー推定
             chord_key = estimate_key_from_chords_fn(structured)
             
-            # ログに3つの推定結果を出力
+            # Optimization 2: chroma と chord が一致する場合、madmom key_processor をスキップ
+            # 相対長短調（例: C major ≈ A minor）も一致とみなす
+            madmom_key = session_data.get("key", "C major")  # default or previously set
+            _chroma_chord_agree = False
+            try:
+                from chord_processing import _key_to_semi, _key_mode, _keys_near
+                _cc_semi_c = _key_to_semi(chroma_key)
+                _cc_semi_d = _key_to_semi(chord_key)
+                _cc_mode_c = _key_mode(chroma_key)
+                _cc_mode_d = _key_mode(chord_key)
+                _chroma_chord_agree = _keys_near(_cc_semi_c, _cc_mode_c, _cc_semi_d, _cc_mode_d)
+            except Exception as _e:
+                print(f"[{session_id}] [KEY] Could not compare chroma/chord keys: {_e}")
+                _chroma_chord_agree = (chroma_key == chord_key)
+            
+            if _chroma_chord_agree:
+                # Chroma and chord agree → skip madmom (~30s saved)
+                print(f"[{session_id}] [KEY] ★ chroma={chroma_key} ≈ chord={chord_key} → skipping madmom key_processor (~30s saved)")
+                perf_log.append(f"[KEY] Skipped madmom: chroma={chroma_key} ≈ chord={chord_key}")
+                final_key = chroma_key
+                method = "consensus-chroma+chord (madmom skipped)"
+            else:
+                # Chroma and chord disagree → run madmom as tiebreaker
+                print(f"[{session_id}] [KEY] chroma={chroma_key} ≠ chord={chord_key} → running madmom key_processor as tiebreaker...")
+                t_key_start = time.time()
+                try:
+                    if key_processor:
+                        key_vec = key_processor(str(wav_path))
+                        if key_vec is not None:
+                            idx = int(key_vec.argmax())
+                            KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'G#', 'A', 'Bb', 'B']
+                            root = KEYS[idx % 12]
+                            mode = "major" if (len(key_vec) == 12 or idx < 12) else "minor"
+                            madmom_key = f"{root} {mode}"
+                            print(f"[{session_id}] [KEY] madmom key_processor result: {madmom_key} ({time.time()-t_key_start:.1f}s)")
+                        else:
+                            print(f"[{session_id}] [KEY] madmom key_processor returned None")
+                    else:
+                        print(f"[{session_id}] [KEY] key_processor not available")
+                except Exception as _ke:
+                    print(f"[{session_id}] [KEY] madmom key_processor failed: {_ke}")
+                t_key_elapsed = time.time() - t_key_start
+                perf_log.append(f"[KEY] madmom fallback: {madmom_key} ({t_key_elapsed:.1f}s)")
+                
+                final_key, method = key_consensus(madmom_key, chroma_key, chord_key)
+            
+            # ログに推定結果を出力
             print(f"[{session_id}] Key estimates: madmom={madmom_key}, chroma={chroma_key}, chord={chord_key}")
-            
-            # コンセンサス投票（五度圏距離ベース）
-            final_key, method = key_consensus(madmom_key, chroma_key, chord_key)
-            
             perf_log.append(f"Key estimates: madmom={madmom_key}, chroma={chroma_key}, chord={chord_key}")
             perf_log.append(f"Key selected: {final_key} ({method})")
             print(f"[{session_id}] Key selected: {final_key} ({method})")
