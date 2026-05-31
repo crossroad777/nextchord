@@ -573,7 +573,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 initial_prompt="日本語の歌。君を忘れない 曲がりくねった道を行く 生まれたての太陽と 夢を渡る黄色い砂",
                                 condition_on_previous_text=True,
                                 no_speech_threshold=0.3,
-                                vad_filter=False,
+                                vad_filter=True,
+                                vad_parameters=dict(
+                                    min_silence_duration_ms=300,  # 短い息継ぎは分割しない
+                                    speech_pad_ms=200,            # 音声の前後に余裕
+                                ),
                                 beam_size=5,
                                 temperature=0.0,
                             )
