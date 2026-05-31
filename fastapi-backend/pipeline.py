@@ -570,7 +570,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 str(wav),
                                 language="ja",
                                 word_timestamps=True,
-                                initial_prompt="日本語の歌。君を忘れない 曲がりくねった道を行く 生まれたての太陽と 夢を渡る黄色い砂",
+                                initial_prompt="日本語の歌詞。",
                                 condition_on_previous_text=True,
                                 no_speech_threshold=0.3,
                                 vad_filter=True,
