@@ -1468,13 +1468,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             
             if _chroma_chord_agree:
                 # Chroma and chord agree → skip madmom (~30s saved)
-                print(f"[{session_id}] [KEY] ★ chroma={chroma_key} ≈ chord={chord_key} → skipping madmom key_processor (~30s saved)")
-                perf_log.append(f"[KEY] Skipped madmom: chroma={chroma_key} ≈ chord={chord_key}")
+                print(f"[{session_id}] [KEY] * chroma={chroma_key} ~= chord={chord_key} -> skipping madmom key_processor (~30s saved)")
+                perf_log.append(f"[KEY] Skipped madmom: chroma={chroma_key} ~= chord={chord_key}")
                 final_key = chroma_key
                 method = "consensus-chroma+chord (madmom skipped)"
             else:
                 # Chroma and chord disagree → run madmom as tiebreaker
-                print(f"[{session_id}] [KEY] chroma={chroma_key} ≠ chord={chord_key} → running madmom key_processor as tiebreaker...")
+                print(f"[{session_id}] [KEY] chroma={chroma_key} != chord={chord_key} -> running madmom key_processor as tiebreaker...")
                 t_key_start = time.time()
                 try:
                     if key_processor:
