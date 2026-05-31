@@ -316,6 +316,15 @@ function splitPhraseWithWords(phraseText, phraseWords, phraseStart, phraseEnd, c
             delete segments[ci]._cs;
         }
 
+        // Post-process: merge very short trailing segments (≤ 1 char) text into previous
+        // Preserves chord display but prevents unnatural text splits
+        for (let ci = segments.length - 1; ci > 0; ci--) {
+            if (segments[ci].text.trim().length <= 1 && segments[ci - 1].text.length > 0) {
+                segments[ci - 1].text += segments[ci].text;
+                segments[ci].text = ''; // Keep segment for chord display, clear text
+            }
+        }
+
         result.push({
             text: lineText,
             chords: groupChords.map(c => ({ chord: c.chord, time: c.time })),
