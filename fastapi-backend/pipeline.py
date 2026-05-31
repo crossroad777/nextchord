@@ -1367,6 +1367,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 bar_positions=bar_positions
             )
             perf_log.append(f"Display phrases: {len(display_phrases)} (from {len(lyrics_phrases)} raw, {len(cleaned_phrases)} after cleanup, bars={'yes' if bar_positions else 'no'})")
+            # bar分割後のフレーズにも再度ハルシネーション除去
+            display_phrases = clean_hallucinated_endings(display_phrases)
         except Exception as e:
             perf_log.append(f"Warning: phrase_processor failed: {e}, using raw phrases")
 

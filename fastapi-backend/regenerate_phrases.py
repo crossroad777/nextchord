@@ -37,6 +37,8 @@ def regenerate_display_phrases(session_dir):
         cleaned, target_chars=30,
         bar_positions=bar_positions if bar_positions else None
     )
+    # bar分割後も再度ハルシネーション除去
+    new_display = clean_hallucinated_endings(new_display)
     
     # 更新
     result["display_phrases"] = new_display
