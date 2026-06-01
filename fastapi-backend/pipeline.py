@@ -717,8 +717,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 first_seg_start = segments[0]['start'] if segments else 0
                                 # 歌の冒頭で10秒以上のギャップがあれば再認識対象
                                 if first_seg_start > 15.0 and segments:
-                                    gap_start = max(0, first_seg_start - 25)  # ギャップ開始（余裕を持って）
-                                    gap_end = first_seg_start + 2  # 少し重複させる
+                                    gap_start = max(0, first_seg_start - 10)  # 歌い出し直前の10秒に絞る
+                                    gap_end = first_seg_start + 1  # 少し重複
                                     print(f"[{sid}] [WHISPER] Detected gap before first lyrics: {gap_start:.1f}s - {gap_end:.1f}s, re-transcribing...")
                                     
                                     # 部分音声を切り出して再認識
@@ -738,10 +738,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                             language="ja",
                                             word_timestamps=True,
                                             condition_on_previous_text=False,
-                                            no_speech_threshold=0.5,
+                                            no_speech_threshold=0.1,  # 最小=歌い出しを確実に拾う
                                             vad_filter=False,
                                             beam_size=5,
-                                            temperature=0.0,
+                                            temperature=[0.0, 0.2, 0.4],  # 複数温度で試行
                                         )
                                         
                                         gap_results = []
