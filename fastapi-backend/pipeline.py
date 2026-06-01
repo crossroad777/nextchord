@@ -169,8 +169,8 @@ def _estimate_time_signature(beat_times, bpm, wav_path=None):
             print(f"[time_sig] Combined: 3/4={combined_3:.3f} (bpm~{bpm_if_3:.0f}), "
                   f"4/4={combined_4:.3f} (bpm~{bpm:.0f})")
 
-            # 4/4が圧倒的に一般的。3/4が勝つには明確なマージンが必要。
-            MARGIN = 0.15
+            # J-POPは99%が4/4。3/4と判定するには非常に強い証拠が必要。
+            MARGIN = 0.25
             if combined_3 > combined_4 + MARGIN:
                 print(f"[time_sig] -> Estimated 3/4")
                 return "3/4"
