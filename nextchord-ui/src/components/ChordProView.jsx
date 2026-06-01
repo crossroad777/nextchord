@@ -145,7 +145,7 @@ export function ChordProView({
     transpose = 0,
     title = '',
     artist = '',
-    barPositions = null,
+    lineTimings = null,
     onChordproChange = null,
 }) {
     const containerRef = useRef(null);
@@ -156,10 +156,17 @@ export function ChordProView({
     const [splitMode, setSplitMode] = useState(false);
     // scrollMode: 'off' | 'follow' | 'constant'
     const [scrollMode, setScrollMode] = useState('follow');
-    const [scrollSpeed, setScrollSpeed] = useState(() => parseFloat(localStorage.getItem('nc-cp-scroll-speed') || '1'));
-    const changeSpeed = d => setScrollSpeed(prev => {
-        const v = Math.round(Math.max(0.3, Math.min(3.0, prev + d)) * 10) / 10;
-        localStorage.setItem('nc-cp-scroll-speed', v); return v;
+    // 速度5段階: 0.5, 0.8, 1.0, 1.5, 2.0
+    const SPEED_LEVELS = [0.5, 0.8, 1.0, 1.5, 2.0];
+    const SPEED_LABELS = ['遅い', 'やや遅', '普通', 'やや速', '速い'];
+    const [speedIdx, setSpeedIdx] = useState(() => {
+        const saved = parseInt(localStorage.getItem('nc-cp-speed-idx') || '2');
+        return Math.max(0, Math.min(SPEED_LEVELS.length - 1, saved));
+    });
+    const scrollSpeed = SPEED_LEVELS[speedIdx];
+    const changeSpeed = d => setSpeedIdx(prev => {
+        const v = Math.max(0, Math.min(SPEED_LEVELS.length - 1, prev + d));
+        localStorage.setItem('nc-cp-speed-idx', v); return v;
     });
     // ローカルテキスト：propから初期化、局所編集を保持
     const [localText, setLocalText] = useState(chordproText || '');
@@ -172,27 +179,6 @@ export function ChordProView({
 
     // パース（localTextを使用）
     const parsed = useMemo(() => parseChordPro(localText), [localText]);
-
-    // barPositions → lineTimings 変換
-    // 各timing行（chord-lyric/chord-only）のコード数に応じてbar_positionsを消費
-    const lineTimings = useMemo(() => {
-        if (!barPositions || !barPositions.length || !parsed.length) return null;
-        const timings = [];
-        let bpIdx = 0;
-        for (const line of parsed) {
-            if (line.type === 'chord-lyric') {
-                const chordCount = line.segments.filter(s => s.chord).length || 1;
-                timings.push({ startTime: barPositions[bpIdx] || 0 });
-                bpIdx += chordCount;
-            } else if (line.type === 'chord-only') {
-                const chordCount = line.chords?.length || 1;
-                timings.push({ startTime: barPositions[bpIdx] || 0 });
-                bpIdx += chordCount;
-            }
-            if (bpIdx >= barPositions.length) bpIdx = barPositions.length - 1;
-        }
-        return timings;
-    }, [barPositions, parsed]);
 
     // アクティブ行の検出
     const activeIdx = useMemo(() => {
@@ -310,9 +296,9 @@ export function ChordProView({
                             title="一定速度で自動スクロール"
                         >自動</button>
                         {scrollMode === 'constant' && (<>
-                            <button className="cp-zoom-btn" onClick={() => changeSpeed(-0.2)} disabled={scrollSpeed <= 0.3}>−</button>
-                            <span className="cp-font-size">×{scrollSpeed.toFixed(1)}</span>
-                            <button className="cp-zoom-btn" onClick={() => changeSpeed(0.2)} disabled={scrollSpeed >= 3.0}>＋</button>
+                            <button className="cp-zoom-btn" onClick={() => changeSpeed(-1)} disabled={speedIdx <= 0}>−</button>
+                            <span className="cp-font-size">{SPEED_LABELS[speedIdx]}</span>
+                            <button className="cp-zoom-btn" onClick={() => changeSpeed(1)} disabled={speedIdx >= SPEED_LEVELS.length - 1}>＋</button>
                         </>)}
                     </div>
                     <button 

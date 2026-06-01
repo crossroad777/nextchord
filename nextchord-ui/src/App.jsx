@@ -1,4 +1,4 @@
-import React, { useEffect, useCallback, useState } from "react";
+import React, { useEffect, useCallback, useState, useMemo } from "react";
 import {
   Music, Check, X, UploadCloud, AlertTriangle, FileText,
   Sun, Moon
@@ -13,6 +13,37 @@ import { useNextChord, STATUS } from "./hooks/useNextChord";
 
 export default function NextChordApp() {
   const app = useNextChord();
+
+  // ChordPro行タイミングを structured_data から計算
+  const chordproLineTimings = useMemo(() => {
+    const r = app.session?.result;
+    if (!r?.structured_data || !r?.chordpro_text) return null;
+    const sd = r.structured_data;
+    // コード変化点を抽出（beat=1でリセット or コード変化、N.C.スキップ）
+    const cc = [];
+    let prev = null;
+    for (let i = 0; i < sd.length; i++) {
+      if (sd[i].chord !== 'N.C.') {
+        if (sd[i].chord !== prev || sd[i].beat === 1) {
+          cc.push(sd[i].time);
+          prev = sd[i].chord;
+        }
+      } else { prev = null; }
+    }
+    // ChordPro各行のコード数に応じてcc消費
+    const lines = r.chordpro_text.split('\n');
+    const re = /\[([A-G][^\]]*?)\]/g;
+    const timings = [];
+    let ci = 0;
+    for (const line of lines) {
+      const m = line.match(re);
+      if (m && m.length > 0) {
+        timings.push({ startTime: cc[ci] || 0 });
+        ci += m.length;
+      }
+    }
+    return timings;
+  }, [app.session?.result]);
 
   // Keyboard shortcuts for export actions
   useEffect(() => {
@@ -94,7 +125,7 @@ export default function NextChordApp() {
                 transpose={app.transpose - app.capo}
                 title={app.session.fileName}
                 artist={app.session.artist}
-                barPositions={app.session.result?.bar_positions}
+                lineTimings={chordproLineTimings}
               />
             ) : (
               <div className="overflow-y-auto py-10 px-8 h-full">
