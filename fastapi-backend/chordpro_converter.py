@@ -461,11 +461,11 @@ def _find_split_position_by_time(text, words, split_time, phrase_start, phrase_e
     for offset in range(len(text) // 2):
         pos_before = target_char - offset
         pos_after = target_char + offset
-        if pos_before > 0 and text[pos_before] == " ":
+        if 0 < pos_before < len(text) and text[pos_before] == " ":
             return pos_before + 1
-        if pos_after < len(text) and text[pos_after] == " ":
+        if 0 <= pos_after < len(text) and text[pos_after] == " ":
             return pos_after + 1
-    return target_char
+    return max(0, min(target_char, len(text)))
 
 
 def _section_to_japanese(section_label):
