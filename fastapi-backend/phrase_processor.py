@@ -159,32 +159,21 @@ def process_phrases_for_display(phrases: list[dict], target_chars: int = 30,
     if not phrases:
         return []
 
-    # Pass 1: gap < 1s のフレーズを結合
-    blocks = []
-    cur = {
-        "start": phrases[0]["start"],
-        "end": phrases[0]["end"],
-        "text": _clean(phrases[0].get("text", "")),
-    }
-
-    for p in phrases[1:]:
-        p_text = _clean(p.get("text", ""))
-        gap = p["start"] - cur["end"]
-
-        if gap < 1.0:
-            cur["end"] = p["end"]
-            cur["text"] += p_text
-        else:
-            if cur["text"]:
-                blocks.append(cur)
-            cur = {"start": p["start"], "end": p["end"], "text": p_text}
-
-    if cur["text"]:
-        blocks.append(cur)
-
-    # Pass 2: 分割はフロントエンドに委譲（4小節グリッド分割はbarPositions + chordTimelineで実施）
-    # バックエンドでは結合のみ行い、分割しない（二重分割による断片化を防止）
-    return blocks
+    # バックエンドは結合・分割を行わず、テキスト清掃のみ。
+    # 4小節グリッド分割はフロントエンド（splitPhraseWithWords）が
+    # barPositions + chordTimeline + word timestamps を使って実行する。
+    result = []
+    for p in phrases:
+        text = _clean(p.get("text", ""))
+        if not text:
+            continue
+        result.append({
+            "start": p.get("start", 0),
+            "end": p.get("end", p.get("start", 0) + 1),
+            "text": text,
+            "words": p.get("words"),
+        })
+    return result
 
 
 def _split_blocks_by_bars(blocks: list[dict], bar_positions: list[float],
