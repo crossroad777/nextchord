@@ -182,18 +182,32 @@ export function ChordProView({
         return -1;
     }, [currentTime, lineTimings]);
 
+    // マウスホイール一時停止: ホイール操作で3秒間スクロールを停止
+    const userScrollingRef = useRef(false);
+    const userScrollTimerRef = useRef(null);
+    useEffect(() => {
+        const container = containerRef.current;
+        if (!container) return;
+        const handleWheel = () => {
+            userScrollingRef.current = true;
+            if (userScrollTimerRef.current) clearTimeout(userScrollTimerRef.current);
+            userScrollTimerRef.current = setTimeout(() => {
+                userScrollingRef.current = false;
+            }, 3000);
+        };
+        container.addEventListener('wheel', handleWheel, { passive: true });
+        return () => {
+            container.removeEventListener('wheel', handleWheel);
+            if (userScrollTimerRef.current) clearTimeout(userScrollTimerRef.current);
+        };
+    }, []);
+
     // ① コード追従モード: アクティブ行へスクロール
     useEffect(() => {
         if (scrollMode !== 'follow') return;
-        if (activeLineRef.current && containerRef.current) {
-            const container = containerRef.current;
-            const el = activeLineRef.current;
-            const containerRect = container.getBoundingClientRect();
-            const elRect = el.getBoundingClientRect();
-            const offset = elRect.top - containerRect.top - containerRect.height * 0.35;
-            if (Math.abs(offset) > 40) {
-                container.scrollBy({ top: offset, behavior: 'smooth' });
-            }
+        if (userScrollingRef.current) return; // ホイール操作中はスキップ
+        if (activeLineRef.current) {
+            activeLineRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
         }
     }, [activeIdx, scrollMode]);
 
@@ -203,7 +217,9 @@ export function ChordProView({
         let id, last = performance.now();
         const step = now => {
             const dt = now - last; last = now;
-            if (containerRef.current) containerRef.current.scrollTop += scrollSpeed * dt * 0.03;
+            if (!userScrollingRef.current && containerRef.current) {
+                containerRef.current.scrollTop += scrollSpeed * dt * 0.03;
+            }
             id = requestAnimationFrame(step);
         };
         id = requestAnimationFrame(step);

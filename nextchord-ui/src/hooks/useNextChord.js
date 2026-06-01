@@ -72,8 +72,48 @@ export function useNextChord() {
       } catch (e) {
         console.error("Latency load error:", e);
       }
+
+      // 曲別設定の復元 (カポ・転調・再生速度・音量)
+      try {
+        const songSettings = JSON.parse(localStorage.getItem('nextchord-song-settings') || '{}');
+        const saved = songSettings[session.id];
+        if (saved) {
+          if (saved.capo !== undefined) setCapo(saved.capo);
+          if (saved.transpose !== undefined) setTranspose(saved.transpose);
+          if (saved.playbackRate !== undefined) setPlaybackRate(saved.playbackRate);
+          if (saved.volume !== undefined) setVolume(saved.volume);
+        } else {
+          // 新しい曲: デフォルトにリセット
+          setCapo(0);
+          setTranspose(0);
+          setPlaybackRate(1.0);
+          setVolume(100);
+        }
+      } catch (e) {
+        console.error('Song settings load error:', e);
+      }
     }
   }, [session?.id]);
+
+  // 曲別設定の自動保存 (デバウンス: 500ms)
+  useEffect(() => {
+    if (!session?.id) return;
+    const timer = setTimeout(() => {
+      try {
+        const songSettings = JSON.parse(localStorage.getItem('nextchord-song-settings') || '{}');
+        songSettings[session.id] = { capo, transpose, playbackRate, volume };
+        // 古いエントリを制限 (最大100曲)
+        const keys = Object.keys(songSettings);
+        if (keys.length > 100) {
+          keys.slice(0, keys.length - 100).forEach(k => delete songSettings[k]);
+        }
+        localStorage.setItem('nextchord-song-settings', JSON.stringify(songSettings));
+      } catch (e) {
+        console.error('Song settings save error:', e);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [session?.id, capo, transpose, playbackRate, volume]);
 
   // 補正値が変更されたら保存する
   useEffect(() => {
@@ -690,6 +730,7 @@ export function useNextChord() {
   const handleCapoChange = (newCapo) => {
     setCapo(newCapo);
     handleRetune(tuning, newCapo, noiseGate);
+    // カポ変更は曲別設定に自動保存される (useEffect経由)
   };
 
   const handleTranspose = (delta) => {
