@@ -184,6 +184,15 @@ export default function NextChordApp() {
               handleYouTubeUpload={app.handleYouTubeUpload}
               history={app.history}
               restoreSession={app.restoreSession}
+              favorites={app.favorites}
+              getFolders={app.getFolders}
+              getFavoritesByFolder={app.getFavoritesByFolder}
+              createFolder={app.createFolder}
+              deleteFolder={app.deleteFolder}
+              moveToFolder={app.moveToFolder}
+              exportSettings={app.exportSettings}
+              importSettings={app.importSettings}
+              showToast={app.showToast}
             />
           )}
 
