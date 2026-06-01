@@ -787,9 +787,19 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                             gap_results.append(gap_seg_dict)
                                         
                                         if gap_results:
+                                            # 短すぎるセグメント(1-2文字)はノイズ、除去
+                                            # first_seg_start以降のセグメントも重複なので除去
+                                            gap_results = [
+                                                gr for gr in gap_results
+                                                if len(gr['text']) >= 3 and gr['start'] < first_seg_start - 0.5
+                                            ]
+                                        if gap_results:
                                             # ギャップセグメントを先頭に挿入
                                             for gr in gap_results:
-                                                print(f"[{sid}] [WHISPER] Gap recovery: '{gr['text'][:50]}' at {gr['start']:.1f}s")
+                                                try:
+                                                    print(f"[{sid}] [WHISPER] Gap recovery: '{gr['text'][:50]}' at {gr['start']:.1f}s")
+                                                except Exception:
+                                                    print(f"[{sid}] [WHISPER] Gap recovery: (text) at {gr['start']:.1f}s")
                                             segments = gap_results + segments
                                             print(f"[{sid}] [WHISPER] Recovered {len(gap_results)} segments from gap")
                                         else:
