@@ -694,6 +694,85 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             print(f"[{sid}] [WHISPER] faster-whisper done: {len(segments)} segments", flush=True)
                             # NOTE: initial_prompt は既に削除済み。
                             # 以前のprompt固有テキスト除去ロジックは廃止。
+                            
+                            # --- ハルシネーション除去で生じたギャップを再認識 ---
+                            # ワードレベルフィルタで全ワード除去されたセグメントがあると、
+                            # その時間帯の歌詞が消失する（例: 「君を忘れない」）。
+                            # 消失区間を特定し、その部分だけ再度Whisperで認識する。
+                            try:
+                                import librosa
+                                import soundfile as sf
+                                import tempfile
+                                
+                                # 最初のセグメントの開始時刻が遅い場合、冒頭にギャップがある
+                                first_seg_start = segments[0]['start'] if segments else 0
+                                # 歌の冒頭で10秒以上のギャップがあれば再認識対象
+                                if first_seg_start > 15.0 and segments:
+                                    gap_start = max(0, first_seg_start - 25)  # ギャップ開始（余裕を持って）
+                                    gap_end = first_seg_start + 2  # 少し重複させる
+                                    print(f"[{sid}] [WHISPER] Detected gap before first lyrics: {gap_start:.1f}s - {gap_end:.1f}s, re-transcribing...")
+                                    
+                                    # 部分音声を切り出して再認識
+                                    y_full, sr_full = librosa.load(str(wav), sr=16000, mono=True)
+                                    start_sample = int(gap_start * sr_full)
+                                    end_sample = min(int(gap_end * sr_full), len(y_full))
+                                    y_gap = y_full[start_sample:end_sample]
+                                    
+                                    # 一時ファイルに書き出し
+                                    gap_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                                    sf.write(gap_wav.name, y_gap, sr_full)
+                                    gap_wav.close()
+                                    
+                                    try:
+                                        gap_segs, gap_info = model.transcribe(
+                                            gap_wav.name,
+                                            language="ja",
+                                            word_timestamps=True,
+                                            condition_on_previous_text=False,
+                                            no_speech_threshold=0.5,
+                                            vad_filter=False,
+                                            beam_size=5,
+                                            temperature=0.0,
+                                        )
+                                        
+                                        gap_results = []
+                                        for gs in gap_segs:
+                                            gt = gs.text.strip()
+                                            if not gt or _is_hallucination(gt):
+                                                continue
+                                            # 時刻をオリジナル音声の時刻に補正
+                                            gap_words = []
+                                            if gs.words:
+                                                for gw in gs.words:
+                                                    gap_words.append({
+                                                        'start': gw.start + gap_start,
+                                                        'end': gw.end + gap_start,
+                                                        'word': gw.word,
+                                                    })
+                                            gap_seg_dict = {
+                                                'id': -1,
+                                                'start': gs.start + gap_start,
+                                                'end': gs.end + gap_start,
+                                                'text': gt,
+                                                'words': gap_words if gap_words else None,
+                                            }
+                                            gap_results.append(gap_seg_dict)
+                                        
+                                        if gap_results:
+                                            # ギャップセグメントを先頭に挿入
+                                            for gr in gap_results:
+                                                print(f"[{sid}] [WHISPER] Gap recovery: '{gr['text'][:50]}' at {gr['start']:.1f}s")
+                                            segments = gap_results + segments
+                                            print(f"[{sid}] [WHISPER] Recovered {len(gap_results)} segments from gap")
+                                        else:
+                                            print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments found")
+                                    finally:
+                                        import os
+                                        os.unlink(gap_wav.name)
+                                        
+                            except Exception as gap_err:
+                                print(f"[{sid}] [WHISPER] Gap recovery failed (non-fatal): {gap_err}")
+                            
                             perf_log.append(f"[DEBUG] Whisper segments: {len(segments)}")
                             perf_log.append(f"[DEBUG] First segment: {segments[0].get('text','')[:80]}" if segments else "[DEBUG] No segments")
                             return {'segments': segments, 'text': ''.join(s.get('text','') for s in segments)}
