@@ -145,7 +145,7 @@ export function ChordProView({
     transpose = 0,
     title = '',
     artist = '',
-    lineTimings = null,
+    barPositions = null,
     onChordproChange = null,
 }) {
     const containerRef = useRef(null);
@@ -172,6 +172,27 @@ export function ChordProView({
 
     // パース（localTextを使用）
     const parsed = useMemo(() => parseChordPro(localText), [localText]);
+
+    // barPositions → lineTimings 変換
+    // 各timing行（chord-lyric/chord-only）のコード数に応じてbar_positionsを消費
+    const lineTimings = useMemo(() => {
+        if (!barPositions || !barPositions.length || !parsed.length) return null;
+        const timings = [];
+        let bpIdx = 0;
+        for (const line of parsed) {
+            if (line.type === 'chord-lyric') {
+                const chordCount = line.segments.filter(s => s.chord).length || 1;
+                timings.push({ startTime: barPositions[bpIdx] || 0 });
+                bpIdx += chordCount;
+            } else if (line.type === 'chord-only') {
+                const chordCount = line.chords?.length || 1;
+                timings.push({ startTime: barPositions[bpIdx] || 0 });
+                bpIdx += chordCount;
+            }
+            if (bpIdx >= barPositions.length) bpIdx = barPositions.length - 1;
+        }
+        return timings;
+    }, [barPositions, parsed]);
 
     // アクティブ行の検出
     const activeIdx = useMemo(() => {

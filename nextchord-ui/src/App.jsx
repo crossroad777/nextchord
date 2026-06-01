@@ -94,6 +94,7 @@ export default function NextChordApp() {
                 transpose={app.transpose - app.capo}
                 title={app.session.fileName}
                 artist={app.session.artist}
+                barPositions={app.session.result?.bar_positions}
               />
             ) : (
               <div className="overflow-y-auto py-10 px-8 h-full">
