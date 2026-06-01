@@ -182,11 +182,9 @@ def process_phrases_for_display(phrases: list[dict], target_chars: int = 30,
     if cur["text"]:
         blocks.append(cur)
 
-    # Pass 2: bar_positionsベース or 文字数ベースで再分割
-    if bar_positions and len(bar_positions) >= 2:
-        return _split_blocks_by_bars(blocks, bar_positions, bars_per_line)
-    else:
-        return _split_blocks_by_chars(blocks, target_chars)
+    # Pass 2: 分割はフロントエンドに委譲（4小節グリッド分割はbarPositions + chordTimelineで実施）
+    # バックエンドでは結合のみ行い、分割しない（二重分割による断片化を防止）
+    return blocks
 
 
 def _split_blocks_by_bars(blocks: list[dict], bar_positions: list[float],
