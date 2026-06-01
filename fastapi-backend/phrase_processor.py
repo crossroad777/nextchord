@@ -159,20 +159,52 @@ def process_phrases_for_display(phrases: list[dict], target_chars: int = 30,
     if not phrases:
         return []
 
-    # バックエンドは結合・分割を行わず、テキスト清掃のみ。
-    # 4小節グリッド分割はフロントエンド（splitPhraseWithWords）が
-    # barPositions + chordTimeline + word timestamps を使って実行する。
-    result = []
+    # テキスト清掃
+    cleaned = []
     for p in phrases:
         text = _clean(p.get("text", ""))
         if not text:
             continue
-        result.append({
+        cleaned.append({
             "start": p.get("start", 0),
             "end": p.get("end", p.get("start", 0) + 1),
             "text": text,
             "words": p.get("words"),
         })
+    
+    if not cleaned:
+        return []
+
+    # 4小節分の時間を計算
+    if bar_positions and len(bar_positions) >= 2:
+        avg_bar_dur = (bar_positions[-1] - bar_positions[0]) / (len(bar_positions) - 1)
+    else:
+        avg_bar_dur = 2.5  # fallback: 120BPM 4/4
+    four_bar_dur = avg_bar_dur * bars_per_line  # 4小節の秒数
+
+    # 短いフレーズを結合して4小節ブロックにまとめる
+    # ルール: 現在のブロックが4小節未満なら次のフレーズを結合
+    result = []
+    cur = dict(cleaned[0])  # copy
+
+    for p in cleaned[1:]:
+        cur_dur = cur["end"] - cur["start"]
+        gap = p["start"] - cur["end"]
+
+        # 現在のブロックが4小節未満 AND ギャップが小さい → 結合
+        if cur_dur < four_bar_dur * 0.9 and gap < four_bar_dur:
+            cur["end"] = p["end"]
+            cur["text"] += p["text"]
+            # words結合
+            if cur.get("words") and p.get("words"):
+                cur["words"] = cur["words"] + p["words"]
+            else:
+                cur["words"] = None
+        else:
+            result.append(cur)
+            cur = dict(p)
+    
+    result.append(cur)
     return result
 
 
