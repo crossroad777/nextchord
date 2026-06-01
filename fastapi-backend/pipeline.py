@@ -733,21 +733,40 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     gap_wav.close()
                                     
                                     try:
-                                        gap_segs, gap_info = model.transcribe(
+                                        # 既存modelの内部状態汚染を回避するため、
+                                        # 小型の別インスタンスで再認識
+                                        from faster_whisper import WhisperModel as _GapWM
+                                        _gap_model = _GapWM("small", device="cuda", compute_type="float16")
+                                        gap_segs, gap_info = _gap_model.transcribe(
                                             gap_wav.name,
                                             language="ja",
                                             word_timestamps=True,
                                             condition_on_previous_text=False,
-                                            no_speech_threshold=0.1,  # 最小=歌い出しを確実に拾う
+                                            no_speech_threshold=0.1,
                                             vad_filter=False,
                                             beam_size=5,
-                                            temperature=[0.0, 0.2, 0.4],  # 複数温度で試行
+                                            temperature=[0.0, 0.2, 0.4],
                                         )
                                         
                                         gap_results = []
+                                        gap_seg_count = 0
                                         for gs in gap_segs:
                                             gt = gs.text.strip()
-                                            if not gt or _is_hallucination(gt):
+                                            gap_seg_count += 1
+                                            is_gap_halluc = _is_hallucination(gt) if gt else True
+                                            # cp932ログ化け防止: ファイルにUTF-8で書く
+                                            try:
+                                                gap_debug_path = session_dir / "gap_debug.txt" if 'session_dir' in dir() else None
+                                                if gap_debug_path:
+                                                    with open(gap_debug_path, 'a', encoding='utf-8') as gf:
+                                                        gf.write(f"gap[{gap_seg_count}]: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} '{gt}'\n")
+                                            except Exception:
+                                                pass
+                                            try:
+                                                print(f"[{sid}] [WHISPER] Gap raw seg: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} len={len(gt)}")
+                                            except Exception:
+                                                print(f"[{sid}] [WHISPER] Gap raw seg: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} (text unprintable)")
+                                            if not gt or is_gap_halluc:
                                                 continue
                                             # 時刻をオリジナル音声の時刻に補正
                                             gap_words = []
@@ -774,10 +793,18 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                             segments = gap_results + segments
                                             print(f"[{sid}] [WHISPER] Recovered {len(gap_results)} segments from gap")
                                         else:
-                                            print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments found")
+                                            print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments found (raw={gap_seg_count})")
                                     finally:
                                         import os
                                         os.unlink(gap_wav.name)
+                                        # ギャップモデルのVRAM解放
+                                        try:
+                                            del _gap_model
+                                            import torch
+                                            if torch.cuda.is_available():
+                                                torch.cuda.empty_cache()
+                                        except Exception:
+                                            pass
                                         
                             except Exception as gap_err:
                                 print(f"[{sid}] [WHISPER] Gap recovery failed (non-fatal): {gap_err}")
