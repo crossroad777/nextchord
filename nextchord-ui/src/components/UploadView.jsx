@@ -1,6 +1,7 @@
-import React from "react";
+import React, { useState, useRef } from "react";
 import {
-  Play, ChevronRight, History, UploadCloud, Music
+  Play, ChevronRight, ChevronDown, History, UploadCloud, Music,
+  Star, FolderPlus, Folder, Trash2, Download, Upload, MoreVertical
 } from 'lucide-react';
 
 export function UploadView({
@@ -10,7 +11,124 @@ export function UploadView({
   handleYouTubeUpload,
   history,
   restoreSession,
+  favorites = [],
+  getFolders,
+  getFavoritesByFolder,
+  createFolder,
+  deleteFolder,
+  moveToFolder,
+  exportSettings,
+  importSettings,
+  showToast,
 }) {
+  const [activeTab, setActiveTab] = useState('history');
+  const [expandedFolders, setExpandedFolders] = useState({});
+  const [showNewFolder, setShowNewFolder] = useState(false);
+  const [newFolderName, setNewFolderName] = useState('');
+  const [openMoveMenu, setOpenMoveMenu] = useState(null);
+  const importInputRef = useRef(null);
+
+  const toggleFolderExpand = (name) => {
+    setExpandedFolders(prev => ({ ...prev, [name]: !prev[name] }));
+  };
+
+  const handleCreateFolder = () => {
+    if (newFolderName.trim()) {
+      createFolder(newFolderName.trim());
+      setNewFolderName('');
+      setShowNewFolder(false);
+    }
+  };
+
+  const handleExport = () => {
+    const json = exportSettings();
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nextchord-settings-${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    if (showToast) showToast('設定をエクスポートしました');
+  };
+
+  const handleImportFile = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      importSettings(ev.target.result);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // お気に入りの曲一覧（history からファイル名等を引く）
+  const historyMap = {};
+  history.forEach(h => { historyMap[h.session_id] = h; });
+
+  const folders = getFolders ? getFolders() : [];
+  const uncategorized = favorites.filter(x => !x.folder && !x.id.startsWith('__folder__'));
+
+  const renderFavItem = (fav) => {
+    const h = historyMap[fav.id];
+    const allFolders = getFolders ? getFolders() : [];
+    return (
+      <div
+        key={fav.id}
+        className="flex items-center justify-between p-3.5 bg-[var(--nc-surface)] border border-[var(--nc-border)] rounded-xl hover:border-[rgba(99,102,241,0.2)] hover:bg-[var(--nc-surface-2)] transition-all cursor-pointer group"
+      >
+        <div
+          className="flex items-center gap-3 flex-1 min-w-0"
+          onClick={() => restoreSession(fav.id)}
+        >
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-[11px] uppercase flex-shrink-0" style={{ background: 'var(--nc-primary-soft)', color: 'var(--nc-primary)' }}>
+            {h?.key ? h.key.split(' ')[0] : '★'}
+          </div>
+          <div className="min-w-0">
+            <div className="font-semibold text-[var(--nc-text)] text-sm truncate max-w-[200px]">{h?.filename || fav.id.slice(0, 12)}</div>
+            <div className="text-[10px] text-[var(--nc-text-ghost)] font-medium">{h?.created_at || fav.id}</div>
+          </div>
+        </div>
+        <div className="flex items-center gap-1 flex-shrink-0 relative">
+          <button
+            onClick={(e) => { e.stopPropagation(); setOpenMoveMenu(openMoveMenu === fav.id ? null : fav.id); }}
+            className="p-1.5 rounded-lg hover:bg-[var(--nc-surface-2)] transition-all text-[var(--nc-text-ghost)] hover:text-[var(--nc-text-secondary)]"
+            title="フォルダに移動"
+            aria-label="Move to folder"
+          >
+            <MoreVertical size={14} />
+          </button>
+          {openMoveMenu === fav.id && (
+            <div
+              className="absolute right-0 top-full mt-1 z-20 min-w-[140px] py-1 rounded-xl shadow-xl border border-[var(--nc-border)]"
+              style={{ background: 'var(--nc-surface)' }}
+            >
+              <button
+                onClick={(e) => { e.stopPropagation(); moveToFolder(fav.id, ''); setOpenMoveMenu(null); }}
+                className="w-full text-left px-3 py-2 text-xs font-medium text-[var(--nc-text-secondary)] hover:bg-[var(--nc-surface-2)] transition-colors"
+              >
+                未分類
+              </button>
+              {allFolders.map(fn => (
+                <button
+                  key={fn}
+                  onClick={(e) => { e.stopPropagation(); moveToFolder(fav.id, fn); setOpenMoveMenu(null); }}
+                  className="w-full text-left px-3 py-2 text-xs font-medium text-[var(--nc-text-secondary)] hover:bg-[var(--nc-surface-2)] transition-colors flex items-center gap-2"
+                >
+                  <Folder size={12} /> {fn}
+                </button>
+              ))}
+            </div>
+          )}
+          <ChevronRight size={16} className="text-[var(--nc-text-ghost)] group-hover:text-[var(--nc-primary)] group-hover:translate-x-0.5 transition-all" />
+        </div>
+      </div>
+    );
+  };
+
+  const hasFavorites = favorites.filter(x => !x.id.startsWith('__folder__')).length > 0 || folders.length > 0;
+
   return (
     <div className="h-full flex flex-col items-center justify-start pt-16 p-12 text-center max-w-4xl mx-auto animate-in fade-in duration-1000 relative">
       {/* Subtle ambient glow */}
@@ -82,32 +200,175 @@ export function UploadView({
           </button>
         </div>
 
-        {/* Recent History Section */}
-        {history.length > 0 && (
+        {/* Tab Switcher: 履歴 | お気に入り */}
+        {(history.length > 0 || hasFavorites) && (
           <div className="mt-14 text-left">
-            <h3 className="text-[10px] font-bold uppercase tracking-widest text-[var(--nc-text-muted)] mb-5 flex items-center gap-2">
-              <History size={12} /> 最近の解析
-            </h3>
-            <div className="grid grid-cols-1 gap-2">
-              {history.slice(0, 5).map((h) => (
-                <div
-                  key={h.session_id}
-                  onClick={() => restoreSession(h.session_id)}
-                  className="flex items-center justify-between p-3.5 bg-[var(--nc-surface)] border border-[var(--nc-border)] rounded-xl hover:border-[rgba(99,102,241,0.2)] hover:bg-[var(--nc-surface-2)] transition-all cursor-pointer group"
+            <div className="flex items-center gap-1 mb-5">
+              <button
+                onClick={() => setActiveTab('history')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all"
+                style={{
+                  background: activeTab === 'history' ? 'var(--nc-primary-soft)' : 'transparent',
+                  color: activeTab === 'history' ? 'var(--nc-primary)' : 'var(--nc-text-muted)',
+                }}
+              >
+                <History size={12} /> 履歴
+              </button>
+              <button
+                onClick={() => setActiveTab('favorites')}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest transition-all"
+                style={{
+                  background: activeTab === 'favorites' ? 'var(--nc-primary-soft)' : 'transparent',
+                  color: activeTab === 'favorites' ? 'var(--nc-primary)' : 'var(--nc-text-muted)',
+                }}
+              >
+                <Star size={12} /> お気に入り
+              </button>
+
+              {/* Settings Export/Import */}
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  onClick={handleExport}
+                  className="p-1.5 rounded-lg hover:bg-[var(--nc-surface-2)] transition-all text-[var(--nc-text-ghost)] hover:text-[var(--nc-text-secondary)]"
+                  title="設定をエクスポート"
+                  aria-label="Export settings"
                 >
-                  <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-[11px] uppercase" style={{ background: 'var(--nc-primary-soft)', color: 'var(--nc-primary)' }}>
-                      {h.key ? h.key.split(' ')[0] : 'N/A'}
-                    </div>
-                    <div>
-                      <div className="font-semibold text-[var(--nc-text)] text-sm truncate max-w-[200px]">{h.filename}</div>
-                      <div className="text-[10px] text-[var(--nc-text-ghost)] font-medium">{h.created_at || h.session_id}</div>
-                    </div>
-                  </div>
-                  <ChevronRight size={16} className="text-[var(--nc-text-ghost)] group-hover:text-[var(--nc-primary)] group-hover:translate-x-0.5 transition-all" />
-                </div>
-              ))}
+                  <Download size={14} />
+                </button>
+                <button
+                  onClick={() => importInputRef.current?.click()}
+                  className="p-1.5 rounded-lg hover:bg-[var(--nc-surface-2)] transition-all text-[var(--nc-text-ghost)] hover:text-[var(--nc-text-secondary)]"
+                  title="設定をインポート"
+                  aria-label="Import settings"
+                >
+                  <Upload size={14} />
+                </button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept=".json"
+                  onChange={handleImportFile}
+                  className="hidden"
+                />
+              </div>
             </div>
+
+            {/* History Tab */}
+            {activeTab === 'history' && history.length > 0 && (
+              <div className="grid grid-cols-1 gap-2">
+                {history.slice(0, 5).map((h) => (
+                  <div
+                    key={h.session_id}
+                    onClick={() => restoreSession(h.session_id)}
+                    className="flex items-center justify-between p-3.5 bg-[var(--nc-surface)] border border-[var(--nc-border)] rounded-xl hover:border-[rgba(99,102,241,0.2)] hover:bg-[var(--nc-surface-2)] transition-all cursor-pointer group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg flex items-center justify-center font-bold text-[11px] uppercase" style={{ background: 'var(--nc-primary-soft)', color: 'var(--nc-primary)' }}>
+                        {h.key ? h.key.split(' ')[0] : 'N/A'}
+                      </div>
+                      <div>
+                        <div className="font-semibold text-[var(--nc-text)] text-sm truncate max-w-[200px]">{h.filename}</div>
+                        <div className="text-[10px] text-[var(--nc-text-ghost)] font-medium">{h.created_at || h.session_id}</div>
+                      </div>
+                    </div>
+                    <ChevronRight size={16} className="text-[var(--nc-text-ghost)] group-hover:text-[var(--nc-primary)] group-hover:translate-x-0.5 transition-all" />
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Favorites Tab */}
+            {activeTab === 'favorites' && (
+              <div className="grid grid-cols-1 gap-2">
+                {/* Folder groups */}
+                {folders.map(folderName => {
+                  const items = getFavoritesByFolder ? getFavoritesByFolder(folderName) : [];
+                  const isExpanded = expandedFolders[folderName] !== false; // default expanded
+                  return (
+                    <div key={folderName}>
+                      <div
+                        className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[var(--nc-surface-2)] transition-all cursor-pointer group"
+                        onClick={() => toggleFolderExpand(folderName)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {isExpanded ? <ChevronDown size={14} className="text-[var(--nc-text-muted)]" /> : <ChevronRight size={14} className="text-[var(--nc-text-muted)]" />}
+                          <Folder size={14} className="text-[var(--nc-primary)]" />
+                          <span className="text-xs font-bold text-[var(--nc-text-secondary)]">{folderName}</span>
+                          <span className="text-[10px] text-[var(--nc-text-ghost)]">({items.length})</span>
+                        </div>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); deleteFolder(folderName); }}
+                          className="p-1 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-[rgba(239,68,68,0.1)] transition-all text-[var(--nc-text-ghost)] hover:text-red-400"
+                          title="フォルダを削除"
+                          aria-label={`Delete folder ${folderName}`}
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                      {isExpanded && items.length > 0 && (
+                        <div className="ml-6 grid grid-cols-1 gap-1.5 mt-1">
+                          {items.map(renderFavItem)}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Uncategorized favorites */}
+                {uncategorized.length > 0 && (
+                  <>
+                    {folders.length > 0 && (
+                      <div className="flex items-center gap-2 p-2.5">
+                        <span className="text-[10px] font-bold uppercase tracking-widest text-[var(--nc-text-ghost)]">未分類</span>
+                      </div>
+                    )}
+                    {uncategorized.map(renderFavItem)}
+                  </>
+                )}
+
+                {/* Empty state */}
+                {!hasFavorites && (
+                  <div className="py-8 text-center">
+                    <Star size={24} className="mx-auto mb-3 text-[var(--nc-text-ghost)]" />
+                    <p className="text-sm text-[var(--nc-text-muted)]">お気に入りはまだありません</p>
+                    <p className="text-xs text-[var(--nc-text-ghost)] mt-1">解析結果画面の ★ ボタンで追加できます</p>
+                  </div>
+                )}
+
+                {/* Create folder button */}
+                {!showNewFolder ? (
+                  <button
+                    onClick={() => setShowNewFolder(true)}
+                    className="flex items-center gap-2 p-2.5 rounded-xl text-xs font-bold text-[var(--nc-text-muted)] hover:bg-[var(--nc-surface-2)] hover:text-[var(--nc-primary)] transition-all"
+                  >
+                    <FolderPlus size={14} /> フォルダ作成
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-2 p-2">
+                    <input
+                      type="text"
+                      value={newFolderName}
+                      onChange={(e) => setNewFolderName(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleCreateFolder(); if (e.key === 'Escape') { setShowNewFolder(false); setNewFolderName(''); } }}
+                      placeholder="フォルダ名..."
+                      autoFocus
+                      className="flex-1 px-3 py-2 rounded-lg text-xs bg-[var(--nc-surface)] border border-[var(--nc-border)] text-[var(--nc-text)] placeholder-[var(--nc-text-muted)] focus:outline-none focus:border-[var(--nc-primary)] transition-all"
+                    />
+                    <button
+                      onClick={handleCreateFolder}
+                      disabled={!newFolderName.trim()}
+                      className="px-3 py-2 rounded-lg text-xs font-bold transition-all"
+                      style={{
+                        background: newFolderName.trim() ? 'var(--nc-primary-soft)' : 'var(--nc-surface-2)',
+                        color: newFolderName.trim() ? 'var(--nc-primary)' : 'var(--nc-text-muted)',
+                      }}
+                    >
+                      作成
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>

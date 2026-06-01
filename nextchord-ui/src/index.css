@@ -2363,3 +2363,99 @@ button:active:not(:disabled),
     box-shadow: none !important;
   }
 }
+
+/* ═══════════════════════════════════════════════════════════ */
+/*  Metronome                                                 */
+/* ═══════════════════════════════════════════════════════════ */
+.metronome-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.metronome-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  height: 30px;
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-sm);
+  color: var(--nc-text-secondary);
+  font-size: 0.7rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.metronome-btn:hover {
+  background: var(--nc-surface-3);
+  color: var(--nc-text);
+}
+
+.metronome-btn.metronome-active {
+  background: var(--nc-primary);
+  color: #fff;
+  border-color: var(--nc-primary);
+}
+
+.metronome-icon {
+  font-size: 0.85rem;
+}
+
+.metronome-label {
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+}
+
+.metronome-display {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.metronome-beats {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.metronome-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--nc-surface-3);
+  border: 1px solid var(--nc-border);
+  transition: all 0.1s;
+}
+
+.metronome-dot-active {
+  background: var(--nc-primary);
+  border-color: var(--nc-primary);
+  transform: scale(1.3);
+}
+
+.metronome-dot-accent.metronome-dot-active {
+  background: var(--nc-amber, #f59e0b);
+  border-color: var(--nc-amber, #f59e0b);
+}
+
+.metronome-volume {
+  width: 50px;
+  height: 3px;
+  appearance: none;
+  background: var(--nc-surface-3);
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.metronome-volume::-webkit-slider-thumb {
+  appearance: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--nc-primary);
+  cursor: pointer;
+}

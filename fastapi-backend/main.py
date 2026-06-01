@@ -101,6 +101,59 @@ import re
 
 import time
 
+# --- Audio Metadata Extraction ---
+try:
+    import mutagen
+    from mutagen.easyid3 import EasyID3
+    from mutagen.mp4 import MP4
+    from mutagen.flac import FLAC as MutagenFLAC
+    _has_mutagen = True
+except ImportError:
+    _has_mutagen = False
+    print("Warning: mutagen not available. Metadata extraction disabled.")
+
+
+def _clean_filename(filename: str) -> str:
+    """ファイル名からカタログ番号的なプレフィックスや拡張子を除去して表示名にする"""
+    name = Path(filename).stem
+    # Remove long numeric prefixes (e.g. "1234567890 - Song Title" or "1234567890_Song")
+    name = re.sub(r'^\d{6,}[\s_\-]+', '', name)
+    # Remove leading/trailing whitespace and underscores
+    name = name.strip(' _-')
+    return name if name else Path(filename).stem
+
+
+def extract_audio_metadata(file_path: Path) -> dict:
+    """mutagenを使ってオーディオファイルからtitle/artistメタデータを抽出する"""
+    result = {"title": None, "artist": None}
+    if not _has_mutagen:
+        return result
+    try:
+        audio = mutagen.File(file_path, easy=True)
+        if audio is None:
+            return result
+
+        # easy=True works for ID3 (MP3), FLAC, OGG etc.
+        # For MP4/M4A, easy mode maps '\xa9nam' -> 'title', '\xa9ART' -> 'artist'
+        title_val = audio.get("title")
+        artist_val = audio.get("artist")
+
+        if title_val:
+            result["title"] = title_val[0].strip() if isinstance(title_val, list) else str(title_val).strip()
+        if artist_val:
+            result["artist"] = artist_val[0].strip() if isinstance(artist_val, list) else str(artist_val).strip()
+
+        # Filter out empty strings
+        if result["title"] == "":
+            result["title"] = None
+        if result["artist"] == "":
+            result["artist"] = None
+
+        print(f"[Metadata] title={result['title']}, artist={result['artist']} from {file_path.name}")
+    except Exception as e:
+        print(f"[Metadata] Failed to extract from {file_path.name}: {e}")
+    return result
+
 # プロジェクトルートをパスに追加
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
@@ -467,6 +520,11 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
     except FileNotFoundError:
         raise HTTPException(status_code=500, detail="ffmpegがインストールされていません")
     
+    # メタデータ抽出 (ID3 / MP4 / FLAC tags)
+    meta = extract_audio_metadata(input_path)
+    display_title = meta["title"] if meta["title"] else _clean_filename(file.filename)
+    display_artist = meta["artist"]  # None if not found
+
     # セッション情報を初期化
     sessions[session_id] = {
         "status": SessionStatus.PENDING,
@@ -478,7 +536,8 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
         "is_separating": False,
         "separation_progress": "未開始",
         "error": None,
-        "filename": file.filename  # フロントエンドの復元時にタイトルとして使用
+        "filename": display_title,  # メタデータのtitleまたはクリーンなファイル名
+        "artist": display_artist,   # メタデータのartist (なければNone)
     }
     
     # セッションを永続化してからバックグラウンドでパイプライン実行

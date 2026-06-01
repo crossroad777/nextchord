@@ -6,6 +6,7 @@ import {
   Download, RefreshCw, ChevronDown, Zap, Disc, FileText,
   Volume2, VolumeX
 } from 'lucide-react';
+import { Metronome } from './Metronome';
 
 const TUNINGS = [
   { value: 'standard', label: 'Standard' },
@@ -151,6 +152,7 @@ export function ResultHeader({
           <span className="px-3 py-1.5 bg-[var(--gf-surface-2)] rounded-lg text-[11px] font-black text-[var(--gf-amber)] border border-[var(--gf-border)]">
             ♩ {session.result?.bpm ? Math.round(session.result.bpm) : '--'} BPM
           </span>
+          <Metronome bpm={Math.round((session?.result?.bpm || 120) * (playbackRate || 1))} />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-4">
           <button onClick={handleShare} className="p-2.5 bg-[var(--gf-surface-2)] text-[var(--gf-text-dim)] hover:text-[var(--gf-amber)] rounded-xl transition-all border border-[var(--gf-border)]" aria-label="Share link"><Share2 size={18} /></button>

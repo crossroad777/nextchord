@@ -131,7 +131,16 @@ export function useNextChord() {
 
   // Feature states
   const [favorites, setFavorites] = useState(() => {
-    try { return JSON.parse(localStorage.getItem('nextchord-favorites') || '[]'); } catch { return []; }
+    try {
+      const raw = JSON.parse(localStorage.getItem('nextchord-favorites') || '[]');
+      // 後方互換: string[] → {id, folder}[] に変換
+      if (Array.isArray(raw) && raw.length > 0 && typeof raw[0] === 'string') {
+        const migrated = raw.map(id => ({ id, folder: '' }));
+        localStorage.setItem('nextchord-favorites', JSON.stringify(migrated));
+        return migrated;
+      }
+      return raw;
+    } catch { return []; }
   });
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [toasts, setToasts] = useState([]);
@@ -600,11 +609,97 @@ export function useNextChord() {
 
 
 
-  const isFavorite = session?.id && favorites.includes(session.id);
+  const isFavorite = session?.id && favorites.some(x => x.id === session.id);
   const toggleFavorite = () => {
-    let f = isFavorite ? favorites.filter(x => x !== session.id) : [...favorites, session.id];
+    let f = isFavorite
+      ? favorites.filter(x => x.id !== session.id)
+      : [...favorites, { id: session.id, folder: '' }];
     setFavorites(f);
     localStorage.setItem('nextchord-favorites', JSON.stringify(f));
+  };
+
+  // --- お気に入りフォルダ管理 ---
+  const createFolder = (name) => {
+    if (!name || !name.trim()) return;
+    // フォルダは favorites 内の folder フィールドで管理
+    // 空のフォルダを作るため、メタエントリを追加
+    const trimmed = name.trim();
+    const existing = favorites.some(x => x.id === `__folder__${trimmed}`);
+    if (existing) return;
+    const f = [...favorites, { id: `__folder__${trimmed}`, folder: trimmed }];
+    setFavorites(f);
+    localStorage.setItem('nextchord-favorites', JSON.stringify(f));
+  };
+
+  const deleteFolder = (name) => {
+    // フォルダ内の曲を「未分類」に移動し、フォルダメタエントリを削除
+    const f = favorites
+      .map(x => x.folder === name && !x.id.startsWith('__folder__') ? { ...x, folder: '' } : x)
+      .filter(x => x.id !== `__folder__${name}`);
+    setFavorites(f);
+    localStorage.setItem('nextchord-favorites', JSON.stringify(f));
+  };
+
+  const moveToFolder = (sessionId, folderName) => {
+    const f = favorites.map(x => x.id === sessionId ? { ...x, folder: folderName } : x);
+    setFavorites(f);
+    localStorage.setItem('nextchord-favorites', JSON.stringify(f));
+  };
+
+  const getFolders = () => {
+    const folderSet = new Set();
+    favorites.forEach(x => {
+      if (x.id.startsWith('__folder__')) folderSet.add(x.folder);
+      else if (x.folder) folderSet.add(x.folder);
+    });
+    return Array.from(folderSet);
+  };
+
+  const getFavoritesByFolder = (folder) => {
+    return favorites.filter(x => x.folder === folder && !x.id.startsWith('__folder__'));
+  };
+
+  // --- 設定エクスポート / インポート ---
+  const exportSettings = () => {
+    const settings = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('nextchord-')) {
+        try { settings[key] = JSON.parse(localStorage.getItem(key)); }
+        catch { settings[key] = localStorage.getItem(key); }
+      }
+    }
+    return JSON.stringify(settings, null, 2);
+  };
+
+  const importSettings = (jsonString) => {
+    try {
+      const settings = JSON.parse(jsonString);
+      if (typeof settings !== 'object' || settings === null) throw new Error('Invalid format');
+      Object.entries(settings).forEach(([key, value]) => {
+        if (key.startsWith('nextchord-')) {
+          localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+        }
+      });
+      // 復元: favorites
+      if (settings['nextchord-favorites']) {
+        const raw = settings['nextchord-favorites'];
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (Array.isArray(parsed) && parsed.length > 0 && typeof parsed[0] === 'string') {
+          setFavorites(parsed.map(id => ({ id, folder: '' })));
+        } else {
+          setFavorites(parsed);
+        }
+      }
+      // 復元: テーマ
+      if (settings['nextchord-theme']) {
+        setTheme(settings['nextchord-theme']);
+      }
+      showToast('設定をインポートしました');
+    } catch (e) {
+      console.error('Import settings error:', e);
+      showToast('設定のインポートに失敗しました', 'error');
+    }
   };
 
   const handleShare = async () => {
@@ -955,6 +1050,9 @@ export function useNextChord() {
     theme, toggleTheme,
     // Favorites
     favorites, isFavorite, toggleFavorite,
+    createFolder, deleteFolder, moveToFolder, getFolders, getFavoritesByFolder,
+    // Settings export/import
+    exportSettings, importSettings,
     // Menu
     showMoreMenu, setShowMoreMenu,
     // Toast (stacking)
