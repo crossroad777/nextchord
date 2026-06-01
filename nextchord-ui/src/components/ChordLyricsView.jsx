@@ -685,17 +685,62 @@ export function ChordLyricsView({
 
         if (phrases.length === 0) return [];
 
+        // ── 4小節グリッドで短いフレーズを結合 ──
+        // barPositionsから4小節窓を構築し、同じ窓内のフレーズを結合
+        const mergedPhrases = [];
+        if (barPositions?.length > 1) {
+            // Build 4-bar windows
+            const windows = [];
+            for (let i = 0; i < barPositions.length; i += BARS_PER_LINE) {
+                const ws = barPositions[i];
+                const we = (i + BARS_PER_LINE < barPositions.length)
+                    ? barPositions[i + BARS_PER_LINE]
+                    : barPositions[barPositions.length - 1] + barDur * BARS_PER_LINE;
+                windows.push([ws, we]);
+            }
+
+            // Assign each phrase to a 4-bar window
+            let wi = 0;
+            let cur = null;
+            for (const p of phrases) {
+                // Find the window this phrase starts in
+                while (wi < windows.length - 1 && p.start >= windows[wi][1] - 0.05) wi++;
+                
+                if (!cur) {
+                    cur = { ...p };
+                } else if (wi < windows.length && p.start < windows[wi][1] - 0.05 
+                           && cur.start >= windows[wi][0] - 0.05) {
+                    // Same 4-bar window → merge
+                    cur.end = p.end;
+                    cur.text = cur.text + p.text;
+                    if (cur.words && p.words) {
+                        cur.words = [...cur.words, ...p.words];
+                    } else {
+                        cur.words = null; // Can't merge word timestamps
+                    }
+                    cur.breaks = []; // Reset breaks for merged phrase
+                } else {
+                    // Different window → push previous, start new
+                    mergedPhrases.push(cur);
+                    cur = { ...p };
+                }
+            }
+            if (cur) mergedPhrases.push(cur);
+        } else {
+            mergedPhrases.push(...phrases);
+        }
+
         const result = [];
         let prevEnd = 0;
 
-        if (phrases[0].start > barDur) {
-            result.push(...instrLines(0, phrases[0].start, 'intro'));
-            prevEnd = phrases[0].start;
+        if (mergedPhrases[0].start > barDur) {
+            result.push(...instrLines(0, mergedPhrases[0].start, 'intro'));
+            prevEnd = mergedPhrases[0].start;
         }
 
-        for (let pi = 0; pi < phrases.length; pi++) {
-            const phrase = phrases[pi];
-            const nextPhraseStart = (pi + 1 < phrases.length) ? phrases[pi + 1].start : null;
+        for (let pi = 0; pi < mergedPhrases.length; pi++) {
+            const phrase = mergedPhrases[pi];
+            const nextPhraseStart = (pi + 1 < mergedPhrases.length) ? mergedPhrases[pi + 1].start : null;
 
             if (phrase.start - prevEnd > INSTR_GAP) {
                 result.push(...instrLines(prevEnd, phrase.start, 'interlude'));
