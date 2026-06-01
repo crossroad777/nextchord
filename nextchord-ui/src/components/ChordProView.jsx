@@ -154,6 +154,13 @@ export function ChordProView({
     const [editText, setEditText] = useState('');
     const [fontSize, setFontSize] = useState(16);
     const [splitMode, setSplitMode] = useState(false);
+    // scrollMode: 'off' | 'follow' | 'constant'
+    const [scrollMode, setScrollMode] = useState('follow');
+    const [scrollSpeed, setScrollSpeed] = useState(() => parseFloat(localStorage.getItem('nc-cp-scroll-speed') || '1'));
+    const changeSpeed = d => setScrollSpeed(prev => {
+        const v = Math.round(Math.max(0.3, Math.min(3.0, prev + d)) * 10) / 10;
+        localStorage.setItem('nc-cp-scroll-speed', v); return v;
+    });
     // ローカルテキスト：propから初期化、局所編集を保持
     const [localText, setLocalText] = useState(chordproText || '');
 
@@ -175,8 +182,9 @@ export function ChordProView({
         return -1;
     }, [currentTime, lineTimings]);
 
-    // アクティブ行へスクロール
+    // ① コード追従モード: アクティブ行へスクロール
     useEffect(() => {
+        if (scrollMode !== 'follow') return;
         if (activeLineRef.current && containerRef.current) {
             const container = containerRef.current;
             const el = activeLineRef.current;
@@ -187,7 +195,20 @@ export function ChordProView({
                 container.scrollBy({ top: offset, behavior: 'smooth' });
             }
         }
-    }, [activeIdx]);
+    }, [activeIdx, scrollMode]);
+
+    // ② 定速スクロールモード
+    useEffect(() => {
+        if (scrollMode !== 'constant' || !containerRef.current) return;
+        let id, last = performance.now();
+        const step = now => {
+            const dt = now - last; last = now;
+            if (containerRef.current) containerRef.current.scrollTop += scrollSpeed * dt * 0.03;
+            id = requestAnimationFrame(step);
+        };
+        id = requestAnimationFrame(step);
+        return () => cancelAnimationFrame(id);
+    }, [scrollMode, scrollSpeed]);
 
     // 編集モード切替（局所テキストを保存）
     const toggleEdit = useCallback(() => {
@@ -239,6 +260,24 @@ export function ChordProView({
                     {artist && <span className="cp-artist">{artist}</span>}
                 </div>
                 <div className="cp-controls">
+                    {/* スクロール制御 */}
+                    <div className="cp-scroll-controls">
+                        <button
+                            className={`cp-zoom-btn ${scrollMode === 'follow' ? 'cl-btn-active' : ''}`}
+                            onClick={() => setScrollMode(m => m === 'follow' ? 'off' : 'follow')}
+                            title="コード追従スクロール"
+                        >📍</button>
+                        <button
+                            className={`cp-zoom-btn ${scrollMode === 'constant' ? 'cl-btn-active' : ''}`}
+                            onClick={() => setScrollMode(m => m === 'constant' ? 'off' : 'constant')}
+                            title="定速スクロール"
+                        >▶</button>
+                        {scrollMode === 'constant' && (<>
+                            <button className="cp-zoom-btn" onClick={() => changeSpeed(-0.2)} disabled={scrollSpeed <= 0.3}>🐢</button>
+                            <span className="cp-font-size">×{scrollSpeed.toFixed(1)}</span>
+                            <button className="cp-zoom-btn" onClick={() => changeSpeed(0.2)} disabled={scrollSpeed >= 3.0}>🐇</button>
+                        </>)}
+                    </div>
                     <button 
                         className="cp-zoom-btn" 
                         onClick={() => setFontSize(s => Math.max(12, s - 2))}
