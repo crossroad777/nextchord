@@ -610,8 +610,17 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 # ハルシネーション判定（韓国語・絵文字・繰り返し）
                                 is_halluc = _is_hallucination(text)
                                 
-                                # ワードタイムスタンプがある場合: ワードレベルで実際の歌詞を救出
-                                # セグメント全体を破棄しない（「作詞 何々 君を忘れない」のような混在を救う）
+                                # セグメント全体がハルシネーション確定 → 即スキップ
+                                # ワードレベル救出はしない（1文字ワードで誤通過するため）
+                                if is_halluc:
+                                    try:
+                                        print(f"[{sid}] [WHISPER] Filtered hallucination [{seg.start:.1f}s-{seg.end:.1f}s]: {text[:80]}")
+                                    except Exception:
+                                        print(f"[{sid}] [WHISPER] Filtered hallucination segment [{seg.start:.1f}s-{seg.end:.1f}s]")
+                                    continue
+                                
+                                # ワードタイムスタンプがある場合: ワードレベルで部分的なハルシネーションを除去
+                                # （セグメント自体はis_halluc=Falseだが、冒頭に「作詞・」等が混入している場合）
                                 if seg.words:
                                     import re
                                     words_list = [
