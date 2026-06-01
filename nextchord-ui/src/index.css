@@ -2065,6 +2065,33 @@ button:active:not(:disabled),
   border-right: 1px solid var(--nc-border);
 }
 
+.cp-scroll-btn {
+  height: 28px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-sm);
+  color: var(--nc-text-secondary);
+  cursor: pointer;
+  font-size: 0.7rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.cp-scroll-btn:hover {
+  background: var(--nc-surface-3);
+  color: var(--nc-text);
+}
+
+.cp-scroll-btn.cl-btn-active {
+  background: var(--nc-primary);
+  color: #fff;
+  border-color: var(--nc-primary);
+}
+
 .cp-zoom-btn {
   width: 32px;
   height: 28px;

@@ -263,19 +263,19 @@ export function ChordProView({
                     {/* スクロール制御 */}
                     <div className="cp-scroll-controls">
                         <button
-                            className={`cp-zoom-btn ${scrollMode === 'follow' ? 'cl-btn-active' : ''}`}
+                            className={`cp-scroll-btn ${scrollMode === 'follow' ? 'cl-btn-active' : ''}`}
                             onClick={() => setScrollMode(m => m === 'follow' ? 'off' : 'follow')}
-                            title="コード追従スクロール"
-                        >📍</button>
+                            title="再生中のコードに合わせて自動スクロール"
+                        >追従</button>
                         <button
-                            className={`cp-zoom-btn ${scrollMode === 'constant' ? 'cl-btn-active' : ''}`}
+                            className={`cp-scroll-btn ${scrollMode === 'constant' ? 'cl-btn-active' : ''}`}
                             onClick={() => setScrollMode(m => m === 'constant' ? 'off' : 'constant')}
-                            title="定速スクロール"
-                        >▶</button>
+                            title="一定速度で自動スクロール"
+                        >自動</button>
                         {scrollMode === 'constant' && (<>
-                            <button className="cp-zoom-btn" onClick={() => changeSpeed(-0.2)} disabled={scrollSpeed <= 0.3}>🐢</button>
+                            <button className="cp-zoom-btn" onClick={() => changeSpeed(-0.2)} disabled={scrollSpeed <= 0.3}>−</button>
                             <span className="cp-font-size">×{scrollSpeed.toFixed(1)}</span>
-                            <button className="cp-zoom-btn" onClick={() => changeSpeed(0.2)} disabled={scrollSpeed >= 3.0}>🐇</button>
+                            <button className="cp-zoom-btn" onClick={() => changeSpeed(0.2)} disabled={scrollSpeed >= 3.0}>＋</button>
                         </>)}
                     </div>
                     <button 
