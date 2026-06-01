@@ -1494,7 +1494,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 structured, lyrics_phrases=lyrics_phrases,
                 display_phrases=display_phrases,
                 title=song_title, artist=song_artist, key=song_key,
-                beats_per_bar=beats_per_bar
+                beats_per_bar=beats_per_bar,
+                bar_positions=bar_positions
             )
             perf_log.append(f"ChordPro text: {len(chordpro_text)} chars, {chordpro_text.count(chr(10))} lines")
         except Exception as e:

@@ -216,6 +216,13 @@ function splitPhraseWithWords(phraseText, phraseWords, phraseStart, phraseEnd, c
             lineRanges.push([gridStart + g * lineDur, gridStart + (g + 1) * lineDur]);
         }
     }
+    // If phrase is only slightly longer than BARS_PER_LINE bars, 
+    // don't split — keep as single line to avoid tiny trailing fragments like 'たよ'
+    const phraseDur = singingEnd - firstChordTime;
+    const maxSingleLineDur = barDur * (BARS_PER_LINE + 1.5); // up to 5.5 bars = 1 line
+    if (lineRanges.length === 2 && phraseDur <= maxSingleLineDur) {
+        lineRanges = [[ lineRanges[0][0], lineRanges[lineRanges.length - 1][1] ]];
+    }
 
     const numLines = lineRanges.length;
     const result = [];

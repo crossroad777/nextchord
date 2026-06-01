@@ -21,7 +21,7 @@ import re
 
 def structured_to_chordpro(structured_data, lyrics_phrases=None,
                             display_phrases=None, title="", artist="",
-                            key="", beats_per_bar=4):
+                            key="", beats_per_bar=4, bar_positions=None):
     """
     structured_data と lyrics_phrases から ChordPro形式テキストを生成。
 
@@ -187,30 +187,27 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None,
                 lines.append(text)
                 continue
 
-            # 【分割判定】以下のいずれかで分割する:
-            # 1. コード数が多すぎる (> MAX_CHORDS_PER_LINE)
-            # 2. Whisperが複数サブフレーズを連結 (スペース2個以上 = 自然なフレーズ境界)
-            # 3. テキストが長すぎる (20文字超 & コード2個以上)
-            MAX_CHORDS_PER_LINE = 4
-            space_count = text.count(' ')
-            is_merged_phrases = (space_count >= 2 and len(phrase_chords) >= 2)
-            is_too_long = (len(text) > 20 and len(phrase_chords) >= 2)
+            # 【4小節ルール】フレーズの小節数を計算
+            # 4小節+α以内のフレーズは分割しない
+            BARS_PER_LINE = 4
+            if bar_positions and len(bar_positions) >= 2:
+                _avg_bar = (bar_positions[-1] - bar_positions[0]) / (len(bar_positions) - 1)
+            else:
+                _avg_bar = 60.0 / 120 * beats_per_bar  # fallback
+            phrase_bars = (p_end - p_start) / _avg_bar if _avg_bar > 0 else 0
 
-            should_split = (
-                len(phrase_chords) > MAX_CHORDS_PER_LINE
-                or is_merged_phrases
-                or is_too_long
-            )
-
-            if should_split:
-                # 分割粒度を決定:
-                # ・Whisperが複数サブフレーズを連結 → 2コード/行（強制分割）
-                # ・それ以外 → MAX_CHORDS_PER_LINE（通常分割）
-                effective_max = 2 if is_merged_phrases else MAX_CHORDS_PER_LINE
-                sub_lines = _split_phrase_lines(
-                    text, phrase_chords, words, p_start, p_end, effective_max)
-                lines.extend(sub_lines)
+            # 5.5小節以内 → 分割しない（4小節 + 1.5小節マージン）
+            if phrase_bars <= BARS_PER_LINE + 1.5:
+                line = _insert_chords_into_lyrics(text, phrase_chords, words, p_start, p_end)
+                lines.append(line)
                 continue
+
+            # 5.5小節超: 4小節 (= 時間ベース) で分割
+            max_chords_for_split = max(4, int(phrase_bars / BARS_PER_LINE) * 4)
+            sub_lines = _split_phrase_lines(
+                text, phrase_chords, words, p_start, p_end, max_chords_for_split)
+            lines.extend(sub_lines)
+            continue
 
 
             # 分割不要: ビート比率ベースでコード位置を決定
