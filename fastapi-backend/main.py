@@ -557,11 +557,7 @@ def download_youtube_audio(url: str, output_dir: Path) -> tuple:
     # タイトルとアーティスト名を取得
     meta = {"title": "YouTube Video", "artist": ""}
     try:
-        info_cmd = [
-            YT_DLP_PATH, "--no-playlist", "--no-warnings",
-            "--print", "%(title)s\n%(artist,uploader)s",
-            url
-        ]
+        info_cmd = [YT_DLP_PATH, "--no-playlist", "--no-warnings", "--force-ipv4", "--no-check-certificates", "--print", "%(title)s\n%(artist,uploader)s", url]
         info_result = subprocess.run(info_cmd, capture_output=True, text=True, timeout=15)
         if info_result.returncode == 0 and info_result.stdout.strip():
             lines = info_result.stdout.strip().split("\n")
@@ -582,6 +578,8 @@ def download_youtube_audio(url: str, output_dir: Path) -> tuple:
         YT_DLP_PATH,
         "--no-playlist",
         "--no-warnings", # Suppress benign runtime warnings
+        "--force-ipv4",
+        "--no-check-certificates",
         "-x",
         "--audio-format", "wav",
         "--audio-quality", "0",
