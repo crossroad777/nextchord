@@ -81,9 +81,6 @@ export function ResultHeader({
   currentTime,
   audioRef,
   handleWaveformClick,
-  // Latency
-  latency,
-  setLatency,
   // Ribbon: Speed
   playbackRate,
   setPlaybackRate,
@@ -191,24 +188,6 @@ export function ResultHeader({
           {/* VOLUME (コンパクト) */}
           <VolumeControl audioRef={audioRef} />
 
-          {/* LATENCY (コンパクト) */}
-          <div className="w-[140px] flex-shrink-0 flex flex-col justify-center gap-1">
-            <div className="flex items-center justify-between">
-              <span className="text-[8px] font-black text-[var(--gf-text-dim)] uppercase tracking-wider flex items-center gap-1">
-                <Clock size={10} /> Latency
-              </span>
-              <span className="text-[9px] font-mono font-black text-[var(--gf-amber)]">{latency}ms</span>
-            </div>
-            <input
-              type="range"
-              min="-500"
-              max="500"
-              step="10"
-              value={latency}
-              onChange={(e) => setLatency(parseInt(e.target.value))}
-              className="w-full h-1 bg-[var(--gf-surface-3)] rounded-lg appearance-none cursor-pointer accent-[var(--gf-amber)]"
-            />
-          </div>
         </div>
       </div>
 

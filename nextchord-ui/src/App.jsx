@@ -110,8 +110,6 @@ export default function NextChordApp() {
             currentTime={app.currentTime}
             audioRef={app.audioRef}
             handleWaveformClick={app.handleWaveformClick}
-            latency={app.latency}
-            setLatency={app.setLatency}
             playbackRate={app.playbackRate}
             setPlaybackRate={app.setPlaybackRate}
             isLooping={app.isLooping}
@@ -142,7 +140,7 @@ export default function NextChordApp() {
             {app.session.result?.chordpro_text ? (
               <ChordProView
                 chordproText={app.session.result.chordpro_text}
-                currentTime={app.currentTime - (app.latency / 1000)}
+                currentTime={app.currentTime}
                 onSeek={app.handleSeek}
                 transpose={app.transpose - app.capo}
                 title={app.session.fileName}
@@ -152,7 +150,20 @@ export default function NextChordApp() {
             ) : (
               <div className="overflow-y-auto py-10 px-8 h-full">
                 <div className="nc-view-enter">
-                  <ChordLyricsView data={app.session.data} lyricsPhrases={app.session.lyricsPhrases} displayPhrases={app.session.displayPhrases} barPositions={app.session.barPositions} currentTime={app.currentTime - (app.latency / 1000)} onSeek={app.handleSeek} onChordEdit={app.handleChordEditByTime} onLyricEdit={app.handleLyricEdit} onChordHover={setHoveredChord} transpose={app.transpose - app.capo} title={app.session.fileName} artist={app.session.artist} />
+                  <ChordLyricsView 
+                    data={app.session.data} 
+                    lyricsPhrases={app.session.lyricsPhrases} 
+                    displayPhrases={app.session.displayPhrases} 
+                    barPositions={app.session.barPositions} 
+                    currentTime={app.currentTime} 
+                    onSeek={app.handleSeek} 
+                    onChordEdit={app.handleChordEditByTime} 
+                    onLyricEdit={app.handleLyricEdit} 
+                    onChordHover={setHoveredChord} 
+                    transpose={app.transpose - app.capo} 
+                    title={app.session.fileName} 
+                    artist={app.session.artist} 
+                  />
                 </div>
               </div>
             )}

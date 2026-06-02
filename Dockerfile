@@ -11,7 +11,7 @@ ARG CACHEBUST=1
 COPY nextchord-ui/ ./
 # Production build - API calls go to same origin
 ENV VITE_API_URL=""
-RUN npm run build && echo "Cache bust for UploadView Settings2 fix"
+RUN npm run build && echo "Cache bust for Latency removal"
 
 # --- Stage 2: Backend + Serve Frontend ---
 FROM python:3.11-slim
