@@ -1,7 +1,7 @@
 import React, { useState, useRef } from "react";
 import {
   Play, ChevronRight, ChevronDown, History, UploadCloud, Music,
-  Star, FolderPlus, Folder, Trash2, Download, Upload, MoreVertical
+  Star, FolderPlus, Folder, Trash2, Download, Upload, MoreVertical, Settings
 } from 'lucide-react';
 
 export function UploadView({
@@ -234,7 +234,7 @@ export function UploadView({
                   title="サーバー設定"
                   aria-label="Server Settings"
                 >
-                  <Settings2 size={16} />
+                  <Settings size={16} />
                 </button>
                 <div className="w-px h-4 bg-[var(--nc-border)] mx-1" />
                 <button
