@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useState, useMemo } from "react";
 import {
   Music, Check, X, UploadCloud, AlertTriangle, FileText,
-  Sun, Moon, Settings2
+  Sun, Moon, Settings
 } from 'lucide-react';
 import { InstrumentPanel } from "./components/InstrumentPanel";
 import { ChordLyricsView } from "./components/ChordLyricsView";
@@ -379,7 +379,7 @@ export default function NextChordApp() {
       {showSettings && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
           <div className="bg-[var(--nc-surface)] border border-[var(--nc-border)] p-6 rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
-            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Settings2 className="text-[var(--nc-primary)]"/> サーバー設定</h2>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Settings className="text-[var(--nc-primary)]"/> サーバー設定</h2>
             <div className="mb-6">
               <label className="block text-sm font-bold text-[var(--nc-text-muted)] mb-2">API Base URL (Google Colab / Local)</label>
               <input 
