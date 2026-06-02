@@ -1,0 +1,27 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nextchord"
+version = "0.1.0"
+description = "A music application for chord, tab, and staff generation based on UMR."
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "black",
+    "isort",
+]
+
+[project.scripts]
+nextchord = "nextchord.app.cli.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]

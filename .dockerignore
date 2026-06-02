@@ -1,0 +1,13 @@
+node_modules/
+venv/
+venv312/
+__pycache__/
+*.pyc
+.git/
+.agent/
+.gemini/
+uploads/
+*.mp3
+*.wav
+*.mid
+.env.local
