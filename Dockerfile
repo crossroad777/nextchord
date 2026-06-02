@@ -7,10 +7,11 @@ FROM node:20-slim AS frontend-builder
 WORKDIR /build
 COPY nextchord-ui/package*.json ./
 RUN npm ci
+ARG CACHEBUST=1
 COPY nextchord-ui/ ./
 # Production build - API calls go to same origin
 ENV VITE_API_URL=""
-RUN npm run build
+RUN npm run build && echo "Cache bust for Settings2 fix"
 
 # --- Stage 2: Backend + Serve Frontend ---
 FROM python:3.11-slim
