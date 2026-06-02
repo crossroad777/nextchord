@@ -440,6 +440,7 @@ class ResultResponse(BaseModel):
     downbeats: Optional[list] = None
     bar_positions: Optional[list] = None
     beats_per_bar: Optional[int] = None
+    chordpro_line_timings: Optional[list] = None
 
 class YouTubeRequest(BaseModel):
     url: str
@@ -908,12 +909,12 @@ def get_text_result(session_id: str):
     if session["status"] != SessionStatus.COMPLETED or not session.get("result"):
          raise HTTPException(status_code=400, detail="解析が完了していません")
          
-    structured_data = session["result"]["structured_data"]
+    chordpro_text = session["result"].get("chordpro_text", "")
     
     # Generate text
     try:
         from export_utils import create_text_score
-        text_score = create_text_score(structured_data)
+        text_score = create_text_score(chordpro_text)
         return Response(content=text_score, media_type="text/plain")
     except Exception as e:
         print(f"Text generation failed: {e}")
@@ -958,16 +959,19 @@ async def get_result(session_id: str):
                 print(f"Warning: phrase_processor failed for {session_id}: {e}")
     # ChordProテキストを最新ロジックで毎回再生成
     chordpro_text = ""
+    chordpro_line_timings = result.get("chordpro_line_timings", [])
     if structured_data:
         try:
             from chordpro_converter import structured_to_chordpro
-            chordpro_text = structured_to_chordpro(
+            chordpro_text, chordpro_line_timings = structured_to_chordpro(
                 structured_data,
                 lyrics_phrases=result.get("lyrics_phrases"),
                 display_phrases=display_phrases,
                 title="",
                 artist=session.get("artist", ""),
-                key=session.get("key", "")
+                key=session.get("key", ""),
+                beats_per_bar=result.get("beats_per_bar", 4),
+                bar_positions=result.get("bar_positions"),
             )
         except Exception as e:
             print(f"Warning: ChordPro conversion failed for {session_id}: {e}")
@@ -988,6 +992,7 @@ async def get_result(session_id: str):
         display_phrases=display_phrases,
         has_notes=session.get("has_notes", False),
         chordpro_text=chordpro_text,
+        chordpro_line_timings=chordpro_line_timings,
         beat_times=result.get("beat_times"),
         downbeats=result.get("downbeats"),
         bar_positions=result.get("bar_positions"),

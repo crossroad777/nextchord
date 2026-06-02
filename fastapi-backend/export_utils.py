@@ -349,122 +349,66 @@ def pad_visual(text, target_w):
     if needed < 0: needed = 0
     return text + " " * needed
 
-def create_text_score(structured_data):
+def create_text_score(chordpro_text):
     """
     Generate a text-based score with chords ALIGNED ABOVE lyrics.
-    Ensures phrase-by-phrase layout without redundancy.
+    Uses chordpro_text directly so the output matches the screen display perfectly.
     """
-    if not structured_data:
+    if not chordpro_text:
         return ""
 
-    all_items = sorted(structured_data, key=lambda x: (x["bar"], x["beat"]))
-
-    def get_global_beat(item):
-        return (item["bar"] - 1) * 4 + (item["beat"] - 1)
-
-    # Pre-collect all unique chord changes with global beat
-    global_chords = {}
-    for it in all_items:
-        c = it.get("chord", "")
-        if c in ["N", "N.C."]: c = ""
-        if c:
-            global_chords[get_global_beat(it)] = c
-
-    def get_chord_at(beat):
-        sorted_beats = sorted(global_chords.keys())
-        active = ""
-        for b in sorted_beats:
-            if b <= beat: active = global_chords[b]
-            else: break
-        return active
-
     lines = []
-    current_section = None
-    last_chord = None
-    
-    # 2. Iterate and render
-    idx = 0
-    while idx < len(all_items):
-        item = all_items[idx]
-        section = item.get("section")
-        
-        if section and section != current_section:
-            if lines and lines[-1] != "": lines.append("")
-            lines.append(f"[{section}]")
-            current_section = section
-
-        if item.get("lyric"):
-            # PHRASE BLOCK
-            lyric_text = item.get("lyric", "")
-            start_beat = get_global_beat(item)
-            
-            # Find next phrase or section change to define duration
-            end_beat = start_beat + 4
-            for next_idx in range(idx + 1, len(all_items)):
-                if all_items[next_idx].get("lyric") or all_items[next_idx].get("section"):
-                    end_beat = get_global_beat(all_items[next_idx])
-                    break
-            
-            duration = max(1, end_beat - start_beat)
-            
-            # Chords for THIS phrase
-            phrase_chords = [] # (vis_pos, chord)
-            
-            # Phrase start chord
-            sc = get_chord_at(start_beat)
-            if sc:
-                phrase_chords.append((0, sc))
-            
-            # Intermediate changes
-            tmp_c = sc
-            for b in sorted(global_chords.keys()):
-                if b > start_beat and b < end_beat:
-                    cur_c = global_chords[b]
-                    if cur_c != tmp_c:
-                        rel = (b - start_beat) / duration
-                        vis_pos = int(rel * get_str_width(lyric_text))
-                        phrase_chords.append((vis_pos, cur_c))
-                        tmp_c = cur_c
-            
-            # Render phrase
-            if phrase_chords:
-                placed = []
-                last_vis = -2
-                for pos, c in phrase_chords:
-                    actual = max(pos, last_vis + 2)
-                    placed.append((actual, c))
-                    last_vis = actual + len(c)
-                
-                c_line = ""
-                cv = 0
-                for pos, c in placed:
-                    c_line += " " * (pos - cv) + c
-                    cv = pos + len(c)
-                lines.append(c_line)
-            
-            lines.append(lyric_text)
+    for line in chordpro_text.split('\n'):
+        line = line.strip()
+        if not line:
             lines.append("")
+            continue
             
-            # Consume all items used in this phrase duration
-            while idx < len(all_items) and get_global_beat(all_items[idx]) < end_beat:
-                last_chord = all_items[idx].get("chord", last_chord) # carry over
-                idx += 1
-        else:
-            # INSTRUMENTAL BLOCK
-            instr_chords = []
-            while idx < len(all_items) and not all_items[idx].get("lyric"):
-                if all_items[idx].get("section") and all_items[idx].get("section") != current_section:
-                    break
-                
-                c = all_items[idx].get("chord", "")
-                if c in ["N", "N.C."]: c = ""
-                if c and c != last_chord:
-                    instr_chords.append(c)
-                    last_chord = c
-                idx += 1
+        # Parse directives
+        if line.startswith('{c:') or line.startswith('{t:') or line.startswith('{st:') or line.startswith('{key:'):
+            import re
+            inner = re.search(r'\{(?:c|t|st|key):(.*)\}', line)
+            if inner:
+                val = inner.group(1).strip()
+                if line.startswith('{c:'):
+                    lines.append(f"[{val}]")
+                else:
+                    lines.append(val)
+            continue
             
-            if instr_chords:
-                lines.append("  ".join(instr_chords))
-                lines.append("")
+        # Parse chords and lyrics
+        import re
+        parts = re.split(r'(\[[^\]]+\])', line)
+        
+        chord_line = ""
+        lyric_line = ""
+        
+        for part in parts:
+            if not part: continue
+            if part.startswith('[') and part.endswith(']'):
+                chord = part[1:-1]
+                # Ensure chord_line reaches the current visual position of lyric_line
+                lyric_w = get_str_width(lyric_line)
+                chord_w = get_str_width(chord_line)
                 
+                if chord_w < lyric_w:
+                    chord_line += " " * (lyric_w - chord_w)
+                # If chord_line is already longer (because of previous long chord names),
+                # we need to pad lyric_line to match, so the next lyric text aligns properly
+                elif chord_w > lyric_w:
+                    lyric_line += " " * (chord_w - lyric_w)
+                
+                chord_line += chord
+                
+                # To prevent chords from sticking together if there's no lyrics between them
+                if chord_line and not chord_line.endswith(" "):
+                    chord_line += " "
+            else:
+                lyric_line += part
+                
+        if chord_line.strip():
+            lines.append(chord_line.rstrip())
+        if lyric_line.strip():
+            lines.append(lyric_line.rstrip())
+            
     return "\n".join(lines).strip()

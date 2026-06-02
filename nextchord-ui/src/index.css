@@ -723,6 +723,7 @@ button:active:not(:disabled),
   right: 0;
   min-width: 200px;
   background: var(--nc-surface);
+  z-index: 100;
   border: 1px solid var(--nc-border);
   border-radius: var(--nc-radius-lg);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
@@ -2014,7 +2015,6 @@ button:active:not(:disabled),
   overflow-x: hidden;
   background: var(--nc-bg);
   position: relative;
-  scroll-behavior: smooth;
 }
 
 /* ─── Top Bar ─── */
@@ -2205,6 +2205,15 @@ button:active:not(:disabled),
 }
 
 /* ─── Chord + Lyrics Lines ─── */
+.cp-chord-only {
+  min-height: 1.5em;
+  margin-bottom: 2px;
+}
+
+.cp-hide-chords .cp-chord-only {
+  display: none !important;
+}
+
 .cp-has-lyrics {
   display: block;
 }
@@ -2217,17 +2226,26 @@ button:active:not(:disabled),
   min-width: 1.5em;
 }
 
-/* ─── Chord Text ─── */
+/* ─── Chord Text & Diagram ─── */
 .cp-chord {
-  display: block;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   font-family: 'JetBrains Mono', 'Consolas', monospace;
   font-weight: 700;
   font-size: 0.9em;
-  color: #818cf8;
-  line-height: 1.6;
+  color: var(--nc-primary);
+  line-height: 1.2;
   white-space: nowrap;
   padding-right: 4px;
-  text-shadow: 0 0 12px rgba(129, 140, 248, 0.2);
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+.cp-chord-name {
+  margin-bottom: 2px;
+}
+
+.cp-hide-chords .cp-chord {
+  display: none !important;
 }
 
 [data-theme="light"] .cp-chord {
@@ -2458,4 +2476,93 @@ button:active:not(:disabled),
   border-radius: 50%;
   background: var(--nc-primary);
   cursor: pointer;
+}
+.cp-fullscreen { position: fixed; inset: 0; z-index: 9999; background: var(--gf-surface); overflow-y: auto; padding: 2rem; }
+.cp-fullscreen .cp-content { padding-bottom: 50vh; }
+
+/* ============================================================
+   PRINT MODE (PDF Export)
+   ============================================================ */
+@media print {
+  /* Reset colors to black & white for printing */
+  :root, body, [data-theme="dark"], [data-theme="light"] {
+    --nc-bg: #ffffff;
+    --nc-surface: #ffffff;
+    --nc-surface-2: #ffffff;
+    --nc-surface-3: #ffffff;
+    --nc-border: #cccccc;
+    --nc-text: #000000;
+    --nc-text-secondary: #333333;
+    --nc-text-muted: #666666;
+    --gf-bg: #ffffff;
+    --gf-surface: #ffffff;
+    --gf-surface-2: #ffffff;
+    --gf-surface-3: #ffffff;
+    --gf-text: #000000;
+    --gf-text-dim: #333333;
+    --gf-border: #cccccc;
+  }
+
+  body {
+    background-color: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  /* Hide unnecessary UI elements */
+  #nc-sidebar,
+  .nc-sidebar,
+  header,
+  .nc-ribbon,
+  .nc-instrument-panel,
+  .cp-floating-controls,
+  .nc-view-enter > button,
+  .nc-export-menu {
+    display: none !important;
+  }
+
+  /* Override fixed heights and scrollbars to let content expand to print pages */
+  html, body, #root, .h-full, .h-screen, .flex-1, .overflow-hidden, .overflow-y-auto {
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    position: static !important;
+    display: block !important;
+  }
+
+  /* Hide the playback controller section (div right after header) */
+  header + div {
+    display: none !important;
+  }
+
+  /* Adjust paddings */
+  .py-10, .px-8 {
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Ensure chordpro container prints well */
+  .cp-container {
+    padding: 0 !important;
+    max-width: 100% !important;
+  }
+  
+  .cp-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-bottom: 20px !important;
+  }
+
+  .chord-lyric-phrase {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Ensure colors for diagram are visible */
+  .guitar-chord-canvas {
+    filter: invert(1) hue-rotate(180deg);
+  }
+
+  * {
+    box-shadow: none !important;
+  }
 }

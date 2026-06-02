@@ -1,4 +1,8 @@
 import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import GuitarChord from './GuitarChord';
+import { Maximize, Minimize } from 'lucide-react';
+import { chordproToPlainText, plainTextToChordpro } from '../utils/plainTextConverter';
 
 /**
  * ChordProView — ChordWiki風のコード譜表示コンポーネント
@@ -156,17 +160,24 @@ export function ChordProView({
     const [splitMode, setSplitMode] = useState(false);
     // scrollMode: 'off' | 'follow' | 'constant'
     const [scrollMode, setScrollMode] = useState('follow');
-    // 速度5段階: 0.5, 0.8, 1.0, 1.5, 2.0
-    const SPEED_LEVELS = [0.5, 0.8, 1.0, 1.5, 2.0];
-    const SPEED_LABELS = ['遅い', 'やや遅', '普通', 'やや速', '速い'];
-    const [speedIdx, setSpeedIdx] = useState(() => {
-        const saved = parseInt(localStorage.getItem('nc-cp-speed-idx') || '2');
-        return Math.max(0, Math.min(SPEED_LEVELS.length - 1, saved));
+    // 速度（バー）: 0.1 〜 3.0
+    const [scrollSpeed, setScrollSpeed] = useState(() => {
+        const saved = parseFloat(localStorage.getItem('nc-cp-scroll-speed'));
+        return isNaN(saved) ? 1.0 : saved;
     });
-    const scrollSpeed = SPEED_LEVELS[speedIdx];
-    const changeSpeed = d => setSpeedIdx(prev => {
-        const v = Math.max(0, Math.min(SPEED_LEVELS.length - 1, prev + d));
-        localStorage.setItem('nc-cp-speed-idx', v); return v;
+    const handleSpeedChange = (e) => {
+        const val = parseFloat(e.target.value);
+        setScrollSpeed(val);
+        localStorage.setItem('nc-cp-scroll-speed', val);
+    };
+
+    // コード表示ON/OFF状態
+    const [showChords, setShowChords] = useState(() => {
+        return localStorage.getItem('nc-cp-show-chords') !== 'false';
+    });
+    // 押さえ方（ダイヤグラム）表示ON/OFF
+    const [showDiagrams, setShowDiagrams] = useState(() => {
+        return localStorage.getItem('nc-cp-show-diagrams') === 'true';
     });
     // ローカルテキスト：propから初期化、局所編集を保持
     const [localText, setLocalText] = useState(chordproText || '');
@@ -188,6 +199,28 @@ export function ChordProView({
         }
         return -1;
     }, [currentTime, lineTimings]);
+
+    // フルスクリーン制御
+    const [isFullscreen, setIsFullscreen] = useState(false);
+    useEffect(() => {
+        const handleFsChange = () => {
+            setIsFullscreen(!!document.fullscreenElement);
+        };
+        document.addEventListener('fullscreenchange', handleFsChange);
+        return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    }, []);
+
+    const toggleFullscreen = () => {
+        if (!document.fullscreenElement) {
+            if (containerRef.current) {
+                containerRef.current.requestFullscreen().catch(err => {
+                    console.warn("Fullscreen failed", err);
+                });
+            }
+        } else {
+            document.exitFullscreen();
+        }
+    };
 
     // マウスホイール一時停止: ホイール操作で3秒間スクロールを停止
     const userScrollingRef = useRef(false);
@@ -221,12 +254,26 @@ export function ChordProView({
     // ② 定速スクロールモード
     useEffect(() => {
         if (scrollMode !== 'constant' || !containerRef.current) return;
-        let id, last = performance.now();
+        let id;
+        let startMs = performance.now();
+        let startScroll = containerRef.current.scrollTop;
+
         const step = now => {
-            const dt = now - last; last = now;
-            if (!userScrollingRef.current && containerRef.current) {
-                containerRef.current.scrollTop += scrollSpeed * dt * 0.03;
+            if (!containerRef.current) return;
+
+            const currentScroll = containerRef.current.scrollTop;
+            const elapsed = now - startMs;
+            const targetScroll = startScroll + elapsed * scrollSpeed * 0.03;
+
+            // ユーザーが手動でスクロールしたか、一番下に到達してtargetScrollだけが進んだ場合、
+            // 基準点（startMs, startScroll）を現在位置にリセットする
+            if (userScrollingRef.current || Math.abs(currentScroll - targetScroll) > 2) {
+                startMs = now;
+                startScroll = currentScroll;
+            } else {
+                containerRef.current.scrollTop = targetScroll;
             }
+
             id = requestAnimationFrame(step);
         };
         id = requestAnimationFrame(step);
@@ -236,12 +283,14 @@ export function ChordProView({
     // 編集モード切替（局所テキストを保存）
     const toggleEdit = useCallback(() => {
         if (editMode) {
-            // 編集終了時に局所テキストを更新
-            setLocalText(editText);
-            if (onChordproChange) onChordproChange(editText);
+            // 編集終了時に2行形式プレーンテキストからChordPro形式に戻して保存
+            const newChordPro = plainTextToChordpro(editText);
+            setLocalText(newChordPro);
+            if (onChordproChange) onChordproChange(newChordPro);
             setEditMode(false);
         } else {
-            setEditText(localText || '');
+            // 編集開始時にChordPro形式を2行形式のプレーンテキストに変換
+            setEditText(chordproToPlainText(localText || ''));
             setEditMode(true);
             setSplitMode(false);
         }
@@ -274,62 +323,146 @@ export function ChordProView({
     // レンダリング用の行インデックスカウンター（タイミング行のみカウント）
     let timingIdx = 0;
 
-    return (
-        <div className="chordpro-view" ref={containerRef}>
-            {/* ヘッダーバー */}
-            <div className="cp-top-bar">
-                <div className="cp-title-area">
-                    {title && <span className="cp-title">{title}</span>}
-                    {artist && <span className="cp-artist">{artist}</span>}
-                </div>
-                <div className="cp-controls">
-                    {/* スクロール制御 */}
-                    <div className="cp-scroll-controls">
-                        <button
-                            className={`cp-scroll-btn ${scrollMode === 'follow' ? 'cl-btn-active' : ''}`}
-                            onClick={() => setScrollMode(m => m === 'follow' ? 'off' : 'follow')}
-                            title="再生中のコードに合わせて自動スクロール"
-                        >追従</button>
-                        <button
-                            className={`cp-scroll-btn ${scrollMode === 'constant' ? 'cl-btn-active' : ''}`}
-                            onClick={() => setScrollMode(m => m === 'constant' ? 'off' : 'constant')}
-                            title="一定速度で自動スクロール"
-                        >自動</button>
-                        {scrollMode === 'constant' && (<>
-                            <button className="cp-zoom-btn" onClick={() => changeSpeed(-1)} disabled={speedIdx <= 0}>−</button>
-                            <span className="cp-font-size">{SPEED_LABELS[speedIdx]}</span>
-                            <button className="cp-zoom-btn" onClick={() => changeSpeed(1)} disabled={speedIdx >= SPEED_LEVELS.length - 1}>＋</button>
-                        </>)}
-                    </div>
-                    <button 
-                        className="cp-zoom-btn" 
-                        onClick={() => setFontSize(s => Math.max(12, s - 2))}
-                        title="文字を小さく"
-                    >A-</button>
-                    <span className="cp-font-size">{fontSize}px</span>
-                    <button 
-                        className="cp-zoom-btn" 
-                        onClick={() => setFontSize(s => Math.min(28, s + 2))}
-                        title="文字を大きく"
-                    >A+</button>
-                    <button
-                        className={`cp-edit-btn ${splitMode ? 'active' : ''}`}
-                        onClick={() => { setSplitMode(p => !p); setEditMode(false); }}
-                        title="行分割モード"
-                        disabled={editMode}
-                    >
-                        {splitMode ? '✂ 分割中' : '✂ 行分割'}
-                    </button>
-                    <button
-                        className={`cp-edit-btn ${editMode ? 'active' : ''}`}
-                        onClick={toggleEdit}
-                        title="ChordPro編集"
-                    >
-                        {editMode ? '✓ 完了' : '✎ 編集'}
-                    </button>
-                </div>
+    const [portalTarget, setPortalTarget] = useState(null);
+    useEffect(() => {
+        // Find the portal target after initial render
+        const target = document.getElementById('cp-portal-target');
+        if (target) setPortalTarget(target);
+    }, []);
+
+    const scrollControls = (
+        <div className="cp-scroll-controls" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+            <button
+                className={`cp-scroll-btn ${scrollMode === 'constant' ? 'cl-btn-active' : ''}`}
+                onClick={() => setScrollMode(m => m === 'constant' ? 'off' : 'constant')}
+                title="一定速度で自動スクロール"
+            >自動</button>
+            
+            <div className={`flex items-center gap-2 mx-1 ${scrollMode !== 'constant' ? 'opacity-50' : ''}`}>
+                <span className="text-[10px] text-[var(--gf-text)]">遅</span>
+                <input 
+                    type="range" 
+                    min="0.1" 
+                    max="3.0" 
+                    step="0.1" 
+                    value={scrollSpeed} 
+                    onChange={handleSpeedChange}
+                    className="w-20 accent-[var(--nc-primary)]"
+                />
+                <span className="text-[10px] text-[var(--gf-text)]">速</span>
             </div>
 
+            <button
+                className={`cp-scroll-btn ${scrollMode === 'follow' ? 'cl-btn-active' : ''}`}
+                onClick={() => setScrollMode(m => m === 'follow' ? 'off' : 'follow')}
+                title="再生中のコードに合わせて自動スクロール"
+            >追従</button>
+        </div>
+    );
+
+    const controls = (
+        <div className="cp-controls" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {/* スクロール制御 */}
+            {scrollControls}
+            
+            <div className="nc-ribbon-divider" style={{ height: '24px' }} />
+
+            <div className="flex items-center gap-1 mx-1">
+                <span className="text-[10px] text-[var(--gf-text)] font-bold">A</span>
+                <input 
+                    type="range" 
+                    min="12" 
+                    max="32" 
+                    step="1" 
+                    value={fontSize} 
+                    onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setFontSize(val);
+                        localStorage.setItem('nc-cp-fontsize', val.toString());
+                    }}
+                    className="w-20 accent-[var(--nc-primary)]"
+                    title={`文字サイズ: ${fontSize}px`}
+                />
+                <span className="text-sm text-[var(--gf-text)] font-bold">A</span>
+            </div>
+            
+            <div className="nc-ribbon-divider" style={{ height: '24px' }} />
+            
+            <button
+                className={`cp-scroll-btn ${showChords ? 'cl-btn-active' : ''}`}
+                onClick={() => {
+                    setShowChords(p => {
+                        const v = !p;
+                        localStorage.setItem('nc-cp-show-chords', v.toString());
+                        return v;
+                    });
+                }}
+                title="コードの表示/非表示を切り替え"
+            >
+                {showChords ? 'コード表示' : 'コード非表示'}
+            </button>
+            
+            <button
+                className={`cp-scroll-btn ${showDiagrams ? 'cl-btn-active' : ''}`}
+                onClick={() => {
+                    setShowDiagrams(p => {
+                        const v = !p;
+                        localStorage.setItem('nc-cp-show-diagrams', v.toString());
+                        return v;
+                    });
+                }}
+                disabled={!showChords}
+                title="ギター押さえ方（ダイヤグラム）の表示"
+            >
+                押さえ方
+            </button>
+
+            <div className="nc-ribbon-divider" style={{ height: '24px' }} />
+
+            <button
+                className={`cp-edit-btn ${splitMode ? 'active' : ''}`}
+                onClick={() => { setSplitMode(p => !p); setEditMode(false); }}
+                title="行分割モード"
+                disabled={editMode}
+            >
+                {splitMode ? '✂ 分割中' : '✂ 行分割'}
+            </button>
+            <button
+                className={`cp-edit-btn ${editMode ? 'active' : ''}`}
+                onClick={toggleEdit}
+                title="ChordPro編集"
+            >
+                {editMode ? '✓ 完了' : '✎ 編集'}
+            </button>
+
+            <div className="nc-ribbon-divider" style={{ height: '24px' }} />
+
+            <button
+                className="cp-scroll-btn flex items-center justify-center gap-1 hover:text-[var(--gf-amber)]"
+                onClick={toggleFullscreen}
+                title="全画面表示"
+            >
+                <Maximize size={16} /> 全画面
+            </button>
+        </div>
+    );
+
+    return (
+        <div className="chordpro-view" ref={containerRef} style={isFullscreen ? { backgroundColor: 'var(--gf-surface)', padding: '2rem', overflowY: 'auto' } : {}}>
+            {portalTarget && createPortal(controls, portalTarget)}
+            {isFullscreen && (
+                <div className="fixed bottom-6 right-6 flex items-center gap-4 bg-[var(--gf-surface-2)] p-2 rounded-2xl shadow-2xl z-50 border border-[var(--gf-border)]" style={{ position: 'fixed' }}>
+                    {scrollControls}
+                    <div className="w-px h-6 bg-[var(--gf-border)]"></div>
+                    <button
+                        className="p-2 text-[var(--gf-text)] hover:text-[var(--gf-amber)] transition-all flex items-center justify-center rounded-full hover:bg-[var(--gf-surface)]"
+                        onClick={toggleFullscreen}
+                        title="全画面表示を終了"
+                    >
+                        <Minimize size={20} />
+                    </button>
+                </div>
+            )}
             {/* 編集モード */}
             {editMode ? (
                 <div className="cp-editor-container">
@@ -337,16 +470,30 @@ export function ChordProView({
                         className="cp-editor"
                         value={editText}
                         onChange={e => setEditText(e.target.value)}
-                        style={{ fontSize: `${fontSize}px` }}
+                        style={{ fontSize: `${fontSize}px`, fontFamily: 'Consolas, Monaco, "Courier New", monospace', whiteSpace: 'pre', overflowX: 'auto' }}
                         spellCheck={false}
                     />
                     <div className="cp-editor-hint">
-                        ✂ 「{`\\n`}」またはEnterで改行・」完了」で保存
+                        💡 2行スタイル編集中（上がコード、下が歌詞）。「✓ 完了」で自動変換して保存されます。
                     </div>
                 </div>
             ) : (
                 /* 表示モード */
-                <div className="cp-content" style={{ fontSize: `${fontSize}px` }}>
+                <div 
+                    className={`cp-content ${!showChords ? 'cp-hide-chords' : ''}`} 
+                    style={{ fontSize: `${fontSize}px` }}
+                    onClick={(e) => {
+                        // ボタンや入力欄のクリックは無視
+                        if (e.target.closest('button') || e.target.closest('input')) return;
+                        // 行分割モード中は無視
+                        if (splitMode) return;
+                        // テキスト選択時は無視
+                        if (window.getSelection().toString().length > 0) return;
+                        
+                        // 自動スクロール（一定速度）のON/OFFを切り替え
+                        setScrollMode(m => m === 'constant' ? 'off' : 'constant');
+                    }}
+                >
                     {parsed.map((line, i) => {
                         const isTimingLine = line.type === 'chord-lyric' || line.type === 'chord-only';
                         const currentTimingIdx = isTimingLine ? timingIdx++ : -1;
@@ -375,11 +522,15 @@ export function ChordProView({
                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                     >
                                         <div className="cp-chord-row">
-                                            {line.chords.map((c, ci) => (
-                                                <span key={ci} className="cp-chord" translate="no">
-                                                    {transposeChord(c, transpose)}
-                                                </span>
-                                            ))}
+                                            {line.chords.map((c, ci) => {
+                                                const transposed = transposeChord(c, transpose);
+                                                return (
+                                                    <span key={ci} className="cp-chord" translate="no">
+                                                        <span className="cp-chord-name">{transposed}</span>
+                                                        {showDiagrams && <GuitarChord chordName={transposed} />}
+                                                    </span>
+                                                );
+                                            })}
                                         </div>
                                     </div>
                                 );
@@ -397,7 +548,8 @@ export function ChordProView({
                                                 <span className="cp-segment">
                                                     {seg.chord && (
                                                         <span className="cp-chord" translate="no">
-                                                            {transposeChord(seg.chord, transpose)}
+                                                            <span className="cp-chord-name">{transposeChord(seg.chord, transpose)}</span>
+                                                            {showDiagrams && <GuitarChord chordName={transposeChord(seg.chord, transpose)} />}
                                                         </span>
                                                     )}
                                                     <span className="cp-lyrics">{seg.lyrics}</span>

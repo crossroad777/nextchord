@@ -1,7 +1,7 @@
 import React, { useEffect, useCallback, useState, useMemo } from "react";
 import {
   Music, Check, X, UploadCloud, AlertTriangle, FileText,
-  Sun, Moon
+  Sun, Moon, Settings2
 } from 'lucide-react';
 import { InstrumentPanel } from "./components/InstrumentPanel";
 import { ChordLyricsView } from "./components/ChordLyricsView";
@@ -9,28 +9,35 @@ import { ChordProView } from "./components/ChordProView";
 import { UploadView } from "./components/UploadView";
 import { ProcessingView } from "./components/ProcessingView";
 import { ResultHeader } from "./components/ResultHeader";
-import { useNextChord, STATUS } from "./hooks/useNextChord";
+import { SetlistView } from "./components/SetlistView";
+import { useNextChord, STATUS, getApiBase } from "./hooks/useNextChord";
 
 export default function NextChordApp() {
   const app = useNextChord();
+  const [showSettings, setShowSettings] = useState(false);
+  const [tempApiUrl, setTempApiUrl] = useState(() => localStorage.getItem('nextchord-api-base') || "");
 
-  // ChordPro行タイミングを structured_data から計算
+  // ChordPro行タイミング: バックエンドで計算済みのデータを優先使用
   const chordproLineTimings = useMemo(() => {
     const r = app.session?.result;
-    if (!r?.structured_data || !r?.chordpro_text) return null;
+    if (!r) return null;
+
+    // バックエンド計算済みタイミングがあればそのまま使用
+    if (r.chordpro_line_timings && r.chordpro_line_timings.length > 0) {
+      return r.chordpro_line_timings.map(t => ({ startTime: t }));
+    }
+
+    // フォールバック: structured_data から推定（既存セッション用）
+    if (!r.structured_data || !r.chordpro_text) return null;
     const sd = r.structured_data;
-    // コード変化点を抽出（beat=1でリセット or コード変化、N.C.スキップ）
     const cc = [];
     let prev = null;
     for (let i = 0; i < sd.length; i++) {
-      if (sd[i].chord !== 'N.C.') {
-        if (sd[i].chord !== prev || sd[i].beat === 1) {
-          cc.push(sd[i].time);
-          prev = sd[i].chord;
-        }
-      } else { prev = null; }
+      if (sd[i].chord !== 'N.C.' && sd[i].chord !== prev) {
+        cc.push(sd[i].time);
+        prev = sd[i].chord;
+      } else if (sd[i].chord === 'N.C.') { prev = null; }
     }
-    // ChordPro各行のコード数に応じてcc消費
     const lines = r.chordpro_text.split('\n');
     const re = /\[([A-G][^\]]*?)\]/g;
     const timings = [];
@@ -63,6 +70,10 @@ export default function NextChordApp() {
   const [favBounce, setFavBounce] = useState(false);
   // ホバー中のコード（右パネルに優先表示）
   const [hoveredChord, setHoveredChord] = useState(null);
+  // 明るさ調整（ライトモード用）
+  const [brightness, setBrightness] = useState(() => {
+    return parseInt(localStorage.getItem('nc-brightness') || '100', 10);
+  });
   const wrappedToggleFavorite = useCallback(() => {
     app.toggleFavorite();
     setFavBounce(true);
@@ -70,6 +81,16 @@ export default function NextChordApp() {
   }, [app.toggleFavorite]);
 
   const renderResultView = () => {
+    if (app.status === "setlist_view") {
+      return (
+        <SetlistView 
+          setlistName={app.setlistName}
+          setlistData={app.setlistData}
+          onClose={app.resetSession}
+        />
+      );
+    }
+
     if (app.status !== STATUS.COMPLETED || !app.session?.data) return null;
 
     return (
@@ -96,6 +117,7 @@ export default function NextChordApp() {
             isLooping={app.isLooping}
             toggleLoop={app.toggleLoop}
             setCapo={app.setCapo}
+            recommendedCapo={app.recommendedCapo}
             handleTranspose={app.handleTranspose}
             instrument={app.instrument}
             setInstrument={app.setInstrument}
@@ -185,6 +207,24 @@ export default function NextChordApp() {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Brightness Adjustment (Light Mode only) */}
+          {app.theme === 'light' && (
+            <div className="flex items-center gap-2 mr-2 bg-white/80 px-3 py-1.5 rounded-full border border-gray-200 shadow-sm" title="明るさを下げる（眩しさ防止）">
+              <Sun size={14} className="text-amber-500" />
+              <input
+                type="range"
+                min="40"
+                max="100"
+                value={brightness}
+                onChange={(e) => {
+                  setBrightness(e.target.value);
+                  localStorage.setItem('nc-brightness', e.target.value);
+                }}
+                className="w-24 accent-amber-500 h-1.5 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+              />
+            </div>
+          )}
+
           {/* Theme Toggle */}
           <button
             id="nc-theme-toggle"
@@ -204,7 +244,7 @@ export default function NextChordApp() {
       </header>
 
       {/* Main content */}
-      <main id="nc-main-content" className="flex-1 flex overflow-hidden relative" role="main">
+      <main id="nc-main-content" className="flex-1 flex overflow-hidden relative" role="main" style={{ filter: app.theme === 'light' ? `brightness(${brightness}%)` : 'none', transition: 'filter 0.3s ease' }}>
         <div className="flex-1 overflow-y-auto scroll-smooth custom-scrollbar relative">
 
           {/* Welcome/Empty State */}
@@ -224,15 +264,21 @@ export default function NextChordApp() {
               moveToFolder={app.moveToFolder}
               exportSettings={app.exportSettings}
               importSettings={app.importSettings}
+              startSetlist={app.startSetlist}
               showToast={app.showToast}
+              onOpenSettings={() => {
+                setTempApiUrl(localStorage.getItem('nextchord-api-base') || "");
+                setShowSettings(true);
+              }}
             />
           )}
 
           {/* Processing state */}
-          {(app.status === STATUS.PROCESSING || app.status === STATUS.UPLOADING) && (
+          {app.status === STATUS.PROCESSING && (
             <ProcessingView
-              session={app.session}
               stepsDone={app.stepsDone}
+              progressMsg={app.progressMsg}
+              onCancel={app.resetSession}
             />
           )}
 
@@ -324,6 +370,45 @@ export default function NextChordApp() {
             </div>
             <div className="flex-1 overflow-auto p-8 bg-[var(--gf-surface)] font-mono text-sm leading-relaxed whitespace-pre overflow-x-auto text-[var(--gf-text)]">
               {app.textContent || "Loading..."}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Settings Modal */}
+      {showSettings && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
+          <div className="bg-[var(--nc-surface)] border border-[var(--nc-border)] p-6 rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Settings2 className="text-[var(--nc-primary)]"/> サーバー設定</h2>
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-[var(--nc-text-muted)] mb-2">API Base URL (Google Colab / Local)</label>
+              <input 
+                type="text" 
+                value={tempApiUrl} 
+                onChange={(e) => setTempApiUrl(e.target.value)} 
+                className="w-full px-4 py-3 rounded-xl bg-[var(--nc-surface-2)] border border-[var(--nc-border)] text-[var(--nc-text)] focus:outline-none focus:border-[var(--nc-primary)] transition-all"
+                placeholder="https://xxxxx.loca.lt"
+              />
+              <p className="text-xs text-[var(--nc-text-ghost)] mt-2 leading-relaxed">
+                Google Colab等で発行されたバックエンドURLを入力してください。空欄にするとデフォルトのローカルホストまたは環境変数のURLが使われます。
+              </p>
+            </div>
+            <div className="flex justify-end gap-2">
+              <button onClick={() => setShowSettings(false)} className="px-4 py-2 rounded-xl text-sm font-bold hover:bg-[var(--nc-surface-2)] text-[var(--nc-text-muted)] transition-all">キャンセル</button>
+              <button 
+                onClick={() => {
+                  if (tempApiUrl.trim()) {
+                    localStorage.setItem('nextchord-api-base', tempApiUrl.trim());
+                  } else {
+                    localStorage.removeItem('nextchord-api-base');
+                  }
+                  setShowSettings(false);
+                  app.showToast("設定を保存しました");
+                }} 
+                className="px-4 py-2 rounded-xl text-sm font-bold bg-[var(--nc-primary)] text-[var(--nc-bg)] hover:bg-[var(--nc-primary-hover)] transition-all shadow-md shadow-indigo-500/20"
+              >
+                保存して適用
+              </button>
             </div>
           </div>
         </div>

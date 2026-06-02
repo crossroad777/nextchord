@@ -4,7 +4,7 @@ import {
   ChevronRight, ChevronLeft, Clock, Square,
   Repeat, Guitar, Music, Layout, FileCode, AlignLeft,
   Download, RefreshCw, ChevronDown, Zap, Disc, FileText,
-  Volume2, VolumeX
+  Volume2, VolumeX, Printer
 } from 'lucide-react';
 import { Metronome } from './Metronome';
 
@@ -69,6 +69,7 @@ export function ResultHeader({
   getTransposedKey,
   transpose,
   capo,
+  recommendedCapo,
   isFavorite,
   // Actions
   handleShare,
@@ -159,7 +160,6 @@ export function ResultHeader({
           <button onClick={toggleFavorite} className={`p-2.5 rounded-xl transition-all border ${isFavorite ? 'bg-pink-900/30 border-pink-800 text-pink-400 nc-fav-bounce' : 'bg-[var(--gf-surface-2)] border-[var(--gf-border)] text-[var(--gf-text-dim)] hover:text-pink-400'}`} aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}>
             <Heart size={18} fill={isFavorite ? 'currentColor' : 'none'} />
           </button>
-          <button className="p-2.5 bg-[var(--gf-surface-2)] text-[var(--gf-text-dim)] hover:text-[var(--gf-amber)] rounded-xl transition-all border border-[var(--gf-border)]" aria-label="More options"><MoreHorizontal size={18} /></button>
         </div>
       </header>
 
@@ -255,6 +255,24 @@ export function ResultHeader({
           <span className="nc-ribbon-label">カポ</span>
         </div>
 
+        {/* Easy Chord Toggle */}
+        {recommendedCapo > 0 && (
+          <div className="nc-ribbon-item flex flex-col justify-center gap-1 ml-[-4px]">
+            <button 
+              onClick={() => setCapo(recommendedCapo)}
+              className={`text-[10px] font-bold px-2 py-0.5 rounded border transition-colors ${capo === recommendedCapo ? 'bg-[var(--gf-amber)] text-[var(--gf-bg)] border-[var(--gf-amber)]' : 'bg-transparent border-[var(--gf-border)] text-[var(--gf-text-dim)] hover:text-[var(--gf-text)]'}`}
+            >
+              ✨ 簡単コード (Capo {recommendedCapo})
+            </button>
+            <button 
+              onClick={() => setCapo(0)}
+              className={`text-[10px] font-bold px-2 py-0.5 rounded border transition-colors ${capo === 0 ? 'bg-[var(--gf-amber)] text-[var(--gf-bg)] border-[var(--gf-amber)]' : 'bg-transparent border-[var(--gf-border)] text-[var(--gf-text-dim)] hover:text-[var(--gf-text)]'}`}
+            >
+              🎵 原曲キー (Capo 0)
+            </button>
+          </div>
+        )}
+
         {/* Transpose */}
         <div className="nc-ribbon-item">
           <div className="flex items-center gap-1 mb-1">
@@ -283,13 +301,23 @@ export function ResultHeader({
           <span className="nc-ribbon-label">テキスト</span>
         </button>
 
+        <div className="nc-ribbon-divider" />
+        
+        <div id="cp-portal-target" className="flex items-center gap-1"></div>
 
         <div style={{ flex: 1 }} />
 
         {/* Export */}
-        <button onClick={() => setShowMoreMenu(!showMoreMenu)} className="nc-ribbon-item relative" aria-label="Export" aria-expanded={showMoreMenu} aria-haspopup="true">
-          <Download className="nc-ribbon-icon" size={20} />
-          <span className="nc-ribbon-label">書き出し</span>
+        <div className="nc-ribbon-item relative" aria-label="Export" aria-expanded={showMoreMenu} aria-haspopup="true">
+          <button 
+            onClick={() => setShowMoreMenu(!showMoreMenu)}
+            className="flex flex-col items-center w-full"
+            style={{ background: 'none', border: 'none', padding: 0 }}
+          >
+            <Download className="nc-ribbon-icon" size={20} />
+            <span className="nc-ribbon-label">書き出し</span>
+          </button>
+          
           {showMoreMenu && (
             <div className="nc-export-menu" onClick={(e) => e.stopPropagation()} role="menu" aria-label="Export formats">
               <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); handleExportMIDI(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleExportMIDI(); setShowMoreMenu(false); } }} className="nc-export-item">
@@ -312,9 +340,15 @@ export function ResultHeader({
                 <span>Guitar Pro 5</span>
                 <span className="nc-export-shortcut">⌃⇧G</span>
               </div>
+              <div className="my-1 border-t border-[var(--gf-border)]" />
+              <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); window.print(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); window.print(); setShowMoreMenu(false); } }} className="nc-export-item">
+                <div className="nc-export-item-icon"><Printer size={14} /></div>
+                <span>印刷 / PDF保存</span>
+                <span className="nc-export-shortcut">⌃P</span>
+              </div>
             </div>
           )}
-        </button>
+        </div>
       </div>
     </>
   );

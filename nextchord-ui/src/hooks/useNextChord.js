@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { transposeChord } from "../utils/musicUtils";
+import { transposeChord, calculateBestCapo } from "../utils/musicUtils";
 
-const API_BASE = import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000";
+export const getApiBase = () => {
+  return localStorage.getItem('nextchord-api-base') || (import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000");
+};
 
 export const STATUS = { IDLE: "idle", UPLOADING: "uploading", PROCESSING: "processing", COMPLETED: "completed", FAILED: "failed" };
 
@@ -13,7 +15,13 @@ export function useNextChord() {
   const [currentTime, setCurrentTime] = useState(0);
   const [currentChord, setCurrentChord] = useState("");
   const [isPlaying, setIsPlaying] = useState(false);
+
   const [viewMode, setViewMode] = useState("text");
+
+  // Setlist State
+  const [setlistData, setSetlistData] = useState([]);
+  const [setlistName, setSetlistName] = useState("");
+
 
   // Premium Controls State
   const [transpose, setTranspose] = useState(0);
@@ -30,6 +38,7 @@ export function useNextChord() {
   const [isDragging, setIsDragging] = useState(false);
   const [instrument, setInstrument] = useState("guitar");
   const [capo, setCapo] = useState(0);
+  const [recommendedCapo, setRecommendedCapo] = useState(0);
   const [tuning, setTuning] = useState('standard');
   const [noiseGate, setNoiseGate] = useState(null);
   const [isRetuning, setIsRetuning] = useState(false);
@@ -179,7 +188,7 @@ export function useNextChord() {
 
   const fetchHistory = async () => {
     try {
-      const res = await fetch(`${API_BASE}/sessions`);
+      const res = await fetch(`${getApiBase()}/sessions`);
       if (res.ok) {
         const data = await res.json();
         setHistory(data);
@@ -215,7 +224,7 @@ export function useNextChord() {
     setStepsDone(0);
     setProgressMsg("セッションを復元中...");
     try {
-      const res = await fetch(`${API_BASE}/result/${sid}`);
+      const res = await fetch(`${getApiBase()}/result/${sid}`);
       if (!res.ok) throw new Error("Session not found");
       const result = await res.json();
       setSession({
@@ -232,7 +241,7 @@ export function useNextChord() {
       });
       setStatus(STATUS.COMPLETED);
       try {
-        const wRes = await fetch(`${API_BASE}/result/${sid}/waveform`);
+        const wRes = await fetch(`${getApiBase()}/result/${sid}/waveform`);
         const wData = await wRes.json();
         setWaveform(wData.peaks || []);
       } catch { }
@@ -240,7 +249,7 @@ export function useNextChord() {
       setTimeout(() => {
         setSession(prev => prev ? {
           ...prev,
-          audioUrl: prev.audioUrl || `${API_BASE}/files/${sid}/playback.mp3`
+          audioUrl: prev.audioUrl || `${getApiBase()}/files/${sid}/playback.mp3`
         } : prev);
       }, 500);
     } catch (err) {
@@ -346,7 +355,7 @@ export function useNextChord() {
   // --- SSE-based status streaming ---
   const handleStatusCompleted = async (sid) => {
     try {
-      const resData = await fetch(`${API_BASE}/result/${sid}`);
+      const resData = await fetch(`${getApiBase()}/result/${sid}`);
       const result = await resData.json();
       // まず結果データのみ設定（audioUrlはまだ設定しない → レンダリング優先）
       setSession(prev => ({
@@ -364,7 +373,7 @@ export function useNextChord() {
       setStatus(STATUS.COMPLETED);
       // 波形データ取得
       try {
-        const wRes = await fetch(`${API_BASE}/result/${sid}/waveform`);
+        const wRes = await fetch(`${getApiBase()}/result/${sid}/waveform`);
         const wData = await wRes.json();
         setWaveform(wData.peaks || []);
       } catch { }
@@ -372,7 +381,7 @@ export function useNextChord() {
       setTimeout(() => {
         setSession(prev => prev ? {
           ...prev,
-          audioUrl: prev.audioUrl || `${API_BASE}/files/${sid}/playback.mp3`
+          audioUrl: prev.audioUrl || `${getApiBase()}/files/${sid}/playback.mp3`
         } : prev);
       }, 500);
     } catch (err) {
@@ -386,7 +395,7 @@ export function useNextChord() {
     if (sseRef.current) { sseRef.current.close(); sseRef.current = null; }
     if (pollInterval.current) { clearInterval(pollInterval.current); pollInterval.current = null; }
 
-    const es = new EventSource(`${API_BASE}/status/${sid}/stream`);
+    const es = new EventSource(`${getApiBase()}/status/${sid}/stream`);
     sseRef.current = es;
 
     es.onmessage = (event) => {
@@ -431,7 +440,7 @@ export function useNextChord() {
   const pollErrorCount = useRef(0);
   const checkStatusLegacy = async (sid) => {
     try {
-      const res = await fetch(`${API_BASE}/status/${sid}`);
+      const res = await fetch(`${getApiBase()}/status/${sid}`);
       if (res.status === 404) {
         clearInterval(pollInterval.current);
         setProgressMsg("セッションが見つかりません。再度アップロードしてください。");
@@ -453,7 +462,7 @@ export function useNextChord() {
 
   const checkSeparationStatus = async (sid) => {
     try {
-      const res = await fetch(`${API_BASE}/status/separation/${sid}`);
+      const res = await fetch(`${getApiBase()}/status/separation/${sid}`);
       const data = await res.json();
       setSeparationProgress(data.progress);
       if (data.has_clean_audio) { setHasCleanAudio(true); setIsSeparating(false); }
@@ -465,7 +474,7 @@ export function useNextChord() {
     if (!session?.id) return;
     setIsSeparating(true);
     try {
-      await fetch(`${API_BASE}/separate/${session.id}`, { method: "POST" });
+      await fetch(`${getApiBase()}/separate/${session.id}`, { method: "POST" });
       const sepPoll = setInterval(() => {
         checkSeparationStatus(session.id);
         if (hasCleanAudioRef.current || !isSeparatingRef.current) clearInterval(sepPoll);
@@ -538,13 +547,13 @@ export function useNextChord() {
     const formData = new FormData();
     formData.append("file", file);
     try {
-      const res = await fetch(`${API_BASE}/upload`, { method: "POST", body: formData });
+      const res = await fetch(`${getApiBase()}/upload`, { method: "POST", body: formData });
       if (!res.ok) {
         const errorData = await res.json();
         throw new Error(errorData.detail || "Upload failed");
       }
       const data = await res.json();
-      setSession({ id: data.session_id, fileName: file.name, audioUrl: `${API_BASE}${data.audio_url}` });
+      setSession({ id: data.session_id, fileName: file.name, audioUrl: `${getApiBase()}${data.audio_url}` });
       setHasCleanAudio(false);
       setIsSeparating(false);
       setStatus(STATUS.PROCESSING);
@@ -556,14 +565,44 @@ export function useNextChord() {
     }
   };
 
+
+  const startSetlist = async (folderName, items) => {
+    if (!items || items.length === 0) return;
+    setStatus(STATUS.PROCESSING);
+    setProgressMsg(`セットリストを構築中...`);
+    
+    try {
+      const results = await Promise.all(items.map(async (item) => {
+        const res = await fetch(`${getApiBase()}/result/${item.id}`);
+        if (!res.ok) throw new Error(`Failed to load ${item.id}`);
+        const data = await res.json();
+        const historyItem = history.find(h => h.session_id === item.id) || {};
+        return {
+          id: item.id,
+          result: data,
+          filename: historyItem.filename || "Unknown",
+          artist: historyItem.artist || "",
+        };
+      }));
+      setSetlistData(results);
+      setSetlistName(folderName);
+      setStatus("setlist_view");
+    } catch (e) {
+      console.error(e);
+      setStatus(STATUS.FAILED);
+      setProgressMsg("セットリストの読み込みに失敗しました");
+    }
+  };
+
   const [ytUrl, setYtUrl] = useState("");
+
   const handleYouTubeUpload = async (urlToUse = ytUrl) => {
     if (!urlToUse) return;
     setStatus(STATUS.PROCESSING);
     setStepsDone(0);
     setProgressMsg("YouTube音声を解析中...");
     try {
-      const res = await fetch(`${API_BASE}/upload/youtube`, {
+      const res = await fetch(`${getApiBase()}/upload/youtube`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ url: urlToUse })
@@ -711,7 +750,7 @@ export function useNextChord() {
   const handleExportPDF = async () => {
     if (!session?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/export/${session.id}/pdf`);
+      const res = await fetch(`${getApiBase()}/export/${session.id}/pdf`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `nextchord_${session.id}.pdf`; a.click();
@@ -721,7 +760,7 @@ export function useNextChord() {
   const handleExportMIDI = async () => {
     if (!session?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/export/${session.id}/midi`);
+      const res = await fetch(`${getApiBase()}/export/${session.id}/midi`);
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a'); a.href = url; a.download = `nextchord_${session.id}.mid`; a.click();
@@ -731,7 +770,7 @@ export function useNextChord() {
   const handleExportMusicXML = async () => {
     if (!session?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/export/${session.id}/musicxml`);
+      const res = await fetch(`${getApiBase()}/export/${session.id}/musicxml`);
       if (!res.ok) throw new Error("No MusicXML");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -742,7 +781,7 @@ export function useNextChord() {
   const handleExportText = async () => {
     if (!session?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/result/${session.id}/text`);
+      const res = await fetch(`${getApiBase()}/result/${session.id}/text`);
       if (!res.ok) throw new Error("No Text");
       const text = await res.text();
       const blob = new Blob([text], { type: 'text/plain; charset=utf-8' });
@@ -754,7 +793,7 @@ export function useNextChord() {
   const handleExportGP5 = async () => {
     if (!session?.id) return;
     try {
-      const res = await fetch(`${API_BASE}/export/${session.id}/gp5`);
+      const res = await fetch(`${getApiBase()}/export/${session.id}/gp5`);
       if (!res.ok) throw new Error("No GP5");
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -770,7 +809,7 @@ export function useNextChord() {
     setShowTextModal(true);
     setTextContent("Loading...");
     try {
-      const res = await fetch(`${API_BASE}/result/${session.id}/text`);
+      const res = await fetch(`${getApiBase()}/result/${session.id}/text`);
       if (!res.ok) throw new Error("Failed");
       const text = await res.text();
       setTextContent(text);
@@ -800,7 +839,7 @@ export function useNextChord() {
       } else if (noiseGate !== null) {
         body.noise_gate = noiseGate;
       }
-      const res = await fetch(`${API_BASE}/result/${session.id}/retune`, {
+      const res = await fetch(`${getApiBase()}/result/${session.id}/retune`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -941,7 +980,7 @@ export function useNextChord() {
   const saveChordEdits = async (newData) => {
     if (!session?.id) return;
     try {
-      await fetch(`${API_BASE}/result/${session.id}/chords`, {
+      await fetch(`${getApiBase()}/result/${session.id}/chords`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -972,7 +1011,7 @@ export function useNextChord() {
   const saveLyricEdits = async (phrases) => {
     if (!session?.id) return;
     try {
-      await fetch(`${API_BASE}/result/${session.id}/lyrics`, {
+      await fetch(`${getApiBase()}/result/${session.id}/lyrics`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ display_phrases: phrases })
@@ -986,7 +1025,7 @@ export function useNextChord() {
     if (!session?.id || isRegenerating) return;
     setIsRegenerating(true);
     try {
-      const res = await fetch(`${API_BASE}/result/${session.id}/regenerate-musicxml`, { method: 'POST' });
+      const res = await fetch(`${getApiBase()}/result/${session.id}/regenerate-musicxml`, { method: 'POST' });
       if (!res.ok) throw new Error('MusicXML regeneration failed');
       setScoreVersion(prev => prev + 1);
       showToast('✅ 譜面を再生成しました');
@@ -1035,7 +1074,7 @@ export function useNextChord() {
     vocalCancel, setVocalCancel,
     isLooping, loopRegion, toggleLoop,
     instrument, setInstrument,
-    capo, setCapo: handleCapoChange,
+    capo, setCapo: handleCapoChange, recommendedCapo,
     // Separation
     isSeparating, separationProgress, hasCleanAudio, handleSeparate,
     // Waveform
@@ -1053,6 +1092,7 @@ export function useNextChord() {
     createFolder, deleteFolder, moveToFolder, getFolders, getFavoritesByFolder,
     // Settings export/import
     exportSettings, importSettings,
+    setlistData, setlistName, startSetlist,
     // Menu
     showMoreMenu, setShowMoreMenu,
     // Toast (stacking)

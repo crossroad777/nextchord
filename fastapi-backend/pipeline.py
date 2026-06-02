@@ -1485,19 +1485,20 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
 
         # --- ChordPro形式テキストを生成 ---
         chordpro_text = ""
+        chordpro_line_timings = []
         try:
             from chordpro_converter import structured_to_chordpro
             song_title = session_data.get("title", "")
             song_artist = session_data.get("artist", "")
             song_key = sessions[session_id].get("key", "")
-            chordpro_text = structured_to_chordpro(
+            chordpro_text, chordpro_line_timings = structured_to_chordpro(
                 structured, lyrics_phrases=lyrics_phrases,
                 display_phrases=display_phrases,
                 title=song_title, artist=song_artist, key=song_key,
                 beats_per_bar=beats_per_bar,
                 bar_positions=bar_positions
             )
-            perf_log.append(f"ChordPro text: {len(chordpro_text)} chars, {chordpro_text.count(chr(10))} lines")
+            perf_log.append(f"ChordPro text: {len(chordpro_text)} chars, {chordpro_text.count(chr(10))} lines, {len(chordpro_line_timings)} timings")
         except Exception as e:
             perf_log.append(f"Warning: ChordPro conversion failed: {e}")
             import traceback; traceback.print_exc()
@@ -1509,6 +1510,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             "lyrics_phrases": lyrics_phrases,
             "display_phrases": display_phrases,
             "chordpro_text": chordpro_text,
+            "chordpro_line_timings": chordpro_line_timings,
             "estimated_tuning": session_data.get("estimated_tuning", "standard"),
             "beat_times": beat_times_list,
             "downbeats": downbeats,

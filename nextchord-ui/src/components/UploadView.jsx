@@ -20,6 +20,8 @@ export function UploadView({
   exportSettings,
   importSettings,
   showToast,
+  startSetlist,
+  onOpenSettings,
 }) {
   const [activeTab, setActiveTab] = useState('history');
   const [expandedFolders, setExpandedFolders] = useState({});
@@ -225,8 +227,16 @@ export function UploadView({
                 <Star size={12} /> お気に入り
               </button>
 
-              {/* Settings Export/Import */}
               <div className="ml-auto flex items-center gap-1">
+                <button
+                  onClick={onOpenSettings}
+                  className="p-1.5 rounded-lg hover:bg-[var(--nc-surface-2)] transition-all text-[var(--nc-text-ghost)] hover:text-[var(--nc-text)]"
+                  title="サーバー設定"
+                  aria-label="Server Settings"
+                >
+                  <Settings2 size={16} />
+                </button>
+                <div className="w-px h-4 bg-[var(--nc-border)] mx-1" />
                 <button
                   onClick={handleExport}
                   className="p-1.5 rounded-lg hover:bg-[var(--nc-surface-2)] transition-all text-[var(--nc-text-ghost)] hover:text-[var(--nc-text-secondary)]"
@@ -307,6 +317,13 @@ export function UploadView({
                       </div>
                       {isExpanded && items.length > 0 && (
                         <div className="ml-6 grid grid-cols-1 gap-1.5 mt-1">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); startSetlist(folderName, items); }}
+                            className="w-full text-left p-2.5 rounded-xl bg-[var(--nc-primary-soft)] text-[var(--nc-primary)] hover:bg-[var(--nc-primary)] hover:text-white transition-all font-bold text-xs flex items-center gap-2 mb-1"
+                          >
+                            <Play size={14} fill="currentColor" />
+                            このセットリストを再生
+                          </button>
                           {items.map(renderFavItem)}
                         </div>
                       )}

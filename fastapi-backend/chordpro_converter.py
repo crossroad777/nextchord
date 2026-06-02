@@ -32,6 +32,7 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None,
     4. 歌詞がない区間はコードのみ行として出力
     """
     lines = []
+    line_timings = []  # 各行の開始時刻（コード行のみ）
 
     # --- ヘッダー ---
     if title:
@@ -166,15 +167,16 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None,
             # 4コードごとに1行に分割（1サイクル=2小節単位）
             # 参照アプリと同じレイアウト: C G Am F / C G Am F / ...
             CHORDS_PER_LINE = 4
-            chord_lines = []
+            chord_lines_data = []  # [(line_text, start_time), ...]
             for i in range(0, len(chord_group), CHORDS_PER_LINE):
                 chunk = chord_group[i:i + CHORDS_PER_LINE]
                 chord_strs = [f"[{cc}]" for _, cc in chunk]
-                chord_lines.append(" ".join(chord_strs))
+                chord_lines_data.append((" ".join(chord_strs), chunk[0][0]))
             # 複数行なら空行で区切る（視覚的に小節感を出す）
-            for cl in chord_lines:
-                lines.append(cl)
-                if len(chord_lines) > 1:
+            for cl_text, cl_time in chord_lines_data:
+                lines.append(cl_text)
+                line_timings.append(cl_time)
+                if len(chord_lines_data) > 1:
                     lines.append("")
 
         elif evt_type == "phrase":
@@ -185,6 +187,7 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None,
 
             if not phrase_chords:
                 lines.append(text)
+                line_timings.append(p_start)
                 continue
 
             # 【4小節ルール】フレーズの小節数を計算
@@ -200,12 +203,24 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None,
             if phrase_bars <= BARS_PER_LINE + 1.5:
                 line = _insert_chords_into_lyrics(text, phrase_chords, words, p_start, p_end)
                 lines.append(line)
+                line_timings.append(phrase_chords[0][0])
                 continue
 
             # 5.5小節超: 4小節 (= 時間ベース) で分割
             max_chords_for_split = max(4, int(phrase_bars / BARS_PER_LINE) * 4)
             sub_lines = _split_phrase_lines(
                 text, phrase_chords, words, p_start, p_end, max_chords_for_split)
+            # 各分割行のタイミングを記録
+            sub_chord_idx = 0
+            for sl in sub_lines:
+                if sub_chord_idx < len(phrase_chords):
+                    line_timings.append(phrase_chords[sub_chord_idx][0])
+                else:
+                    line_timings.append(p_start)
+                # この行のコード数を数えて次の開始位置へ
+                import re as _re
+                chord_count = len(_re.findall(r'\[([A-G][^\]]*?)\]', sl))
+                sub_chord_idx += chord_count
             lines.extend(sub_lines)
             continue
 
@@ -215,7 +230,7 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None,
             lines.append(line)
 
 
-    return "\n".join(lines)
+    return "\n".join(lines), line_timings
 
 
 def _split_phrase_lines(text, phrase_chords, words, p_start, p_end, max_chords=4):
@@ -447,14 +462,36 @@ def _group_single_char_words(words, min_gap=0.4):
 
 def _find_split_position_by_time(text, words, split_time, phrase_start, phrase_end):
     """
-    ビート時刻比率でテキスト分割位置を決定する。
+    ビート時刻比率または単語のタイミング情報を使ってテキスト分割位置を決定する。
     """
+    # 1. wordsデータがある場合はそれを使って正確な位置を特定する
+    if words:
+        char_idx = 0
+        text_no_space = text.replace(" ", "")
+        
+        # wordsのテキストとtextが一致しない場合（部分文字列など）に備える
+        # text内のどこにいるかを追跡
+        match_idx = 0
+        for w in words:
+            w_text = w.get("word", "").strip()
+            w_start = w.get("start", phrase_start)
+            
+            # この単語の開始時刻がsplit_timeに達したら、ここで分割
+            if w_start >= split_time - 0.2:
+                # 現在のchar_idxがテキストの範囲内ならそこで分割
+                # ただし、短すぎる残骸（1〜2文字）を残さないように調整
+                if 2 <= char_idx <= len(text) - 2:
+                    return char_idx
+                    
+            char_idx += len(w_text)
+            
+    # 2. wordsがない、または見つからなかった場合は線形補間（フォールバック）
     phrase_duration = max(phrase_end - phrase_start, 0.01)
     ratio = (split_time - phrase_start) / phrase_duration
     ratio = max(0.0, min(1.0, ratio))
     target_char = int(ratio * len(text))
 
-    # target_char前後の空白（スペース）を探して単語境界とする
+    # target_char前後の空白を探す
     for offset in range(len(text) // 2):
         pos_before = target_char - offset
         pos_after = target_char + offset
@@ -462,6 +499,13 @@ def _find_split_position_by_time(text, words, split_time, phrase_start, phrase_e
             return pos_before + 1
         if 0 <= pos_after < len(text) and text[pos_after] == " ":
             return pos_after + 1
+            
+    # 1文字だけ孤立するのを防ぐ
+    if target_char == len(text) - 1:
+        target_char = len(text) - 2
+    elif target_char == 1 and len(text) > 2:
+        target_char = 2
+        
     return max(0, min(target_char, len(text)))
 
 

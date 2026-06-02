@@ -38,8 +38,9 @@ RUN pip install --no-cache-dir Cython numpy setuptools wheel && \
     pip install --no-cache-dir yt-dlp && \
     pip install --no-cache-dir setuptools
 
-# Copy backend code
+# Copy backend code and models
 COPY fastapi-backend/ ./fastapi-backend/
+COPY ChordMini/ ./ChordMini/
 
 # Copy built frontend from Stage 1
 COPY --from=frontend-builder /build/dist ./frontend-dist/
