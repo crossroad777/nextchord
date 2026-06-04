@@ -230,7 +230,14 @@ async def lifespan(app: FastAPI):
         
         if _use_faster_whisper:
             compute_type = "float16" if device == "cuda" else "int8"
-            whisper_model = FasterWhisperModel(whisper_size, device=device, compute_type=compute_type)
+            # CPU環境(2 vCPU)でのスレッド競合を防ぎ、動作を高速化するために cpu_threads=2 を指定
+            cpu_threads = 2 if device == "cpu" else 4
+            whisper_model = FasterWhisperModel(
+                whisper_size, 
+                device=device, 
+                compute_type=compute_type,
+                cpu_threads=cpu_threads
+            )
             print(f"AI Models loaded. faster-whisper '{whisper_size}' on {device} ({compute_type})")
         else:
             whisper_model = whisper.load_model(whisper_size, device=device)
