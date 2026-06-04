@@ -2232,6 +2232,7 @@ button:active:not(:disabled),
   padding-right: 1.0em;
   margin-bottom: 0.5em;
   vertical-align: bottom;
+  align-content: end;
 }
 
 .cp-chord-only .cp-measure {

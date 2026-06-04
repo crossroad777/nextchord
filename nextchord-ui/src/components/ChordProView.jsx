@@ -537,7 +537,7 @@ export function ChordProView({
                                         onClick={() => onSeek && lineTimings?.[currentTimingIdx] && 
                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                     >
-                                        <div className="cp-chord-row" style={{ display: 'flex', width: '100%' }}>
+                                        <div className="cp-chord-row" style={{ display: 'flex', width: '100%', alignItems: 'flex-end' }}>
                                             {(line.measures || []).map((measureChords, mi) => (
                                                 <div key={mi} className="cp-measure">
                                                     {measureChords.map((c, ci) => {
@@ -566,7 +566,7 @@ export function ChordProView({
                                         onClick={() => !splitMode && onSeek && lineTimings?.[currentTimingIdx] && 
                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                     >
-                                        <div style={{ display: 'flex', width: '100%' }}>
+                                        <div style={{ display: 'flex', width: '100%', alignItems: 'flex-end' }}>
                                             {(line.measures || []).map((measure, mi) => (
                                                 <div key={mi} className="cp-measure">
                                                     {measure.map((seg, si) => {
