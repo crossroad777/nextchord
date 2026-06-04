@@ -581,6 +581,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 import requests
                 import os
                 import time as _time
+                import subprocess
+                import tempfile
                 
                 t0 = _time.time()
                 url = "https://api.groq.com/openai/v1/audio/transcriptions"
@@ -588,10 +590,36 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     "Authorization": f"Bearer {api_key}"
                 }
                 
+                # --- FFMPEG による 16kHz モノラル WAV へのダウンサンプル ---
+                # アップロードサイズ削減と Groq の 25MB 制限回避のため
+                temp_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                temp_wav.close()
+                upload_path = temp_wav.name
+                
                 try:
-                    with open(wav_path, "rb") as f:
+                    ffmpeg_cmd = [
+                        os.getenv("FFMPEG_PATH", "ffmpeg"),
+                        "-y",
+                        "-i", str(wav_path),
+                        "-ar", "16000",
+                        "-ac", "1",
+                        str(upload_path)
+                    ]
+                    print(f"[{sid}] [WHISPER-GROQ] Downsampling to 16kHz mono: {os.path.basename(wav_path)} -> {os.path.basename(upload_path)}", flush=True)
+                    subprocess.run(ffmpeg_cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                except Exception as fe:
+                    print(f"[{sid}] [WHISPER-GROQ] FFMPEG downsampling failed: {fe}. Using original wav...", flush=True)
+                    upload_path = wav_path
+                    if os.path.exists(temp_wav.name):
+                        try:
+                            os.remove(temp_wav.name)
+                        except Exception:
+                            pass
+                
+                try:
+                    with open(upload_path, "rb") as f:
                         files = {
-                            "file": (os.path.basename(wav_path), f, "audio/wav")
+                            "file": (os.path.basename(upload_path), f, "audio/wav")
                         }
                         data = {
                             "model": "whisper-large-v3",
@@ -639,6 +667,14 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 except Exception as e:
                     print(f"[{sid}] [WHISPER-GROQ] Request failed: {e}")
                     raise e
+                finally:
+                    # 一時ファイルの削除
+                    if upload_path != wav_path and os.path.exists(upload_path):
+                        try:
+                            os.remove(upload_path)
+                            print(f"[{sid}] [WHISPER-GROQ] Temporary downsampled file cleaned up", flush=True)
+                        except Exception as ce:
+                            print(f"[{sid}] [WHISPER-GROQ] Failed to clean up temp file: {ce}", flush=True)
 
             def _whisper_with_lock(model, wav, sid):
                 """GPU排他ロック付きWhisper実行（Groq API優先 / 失敗時はローカルフォールバック）"""
