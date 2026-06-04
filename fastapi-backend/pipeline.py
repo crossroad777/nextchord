@@ -690,268 +690,257 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 raise e
                         else:
                             # openai-whisper API
-                            raise Exception("openai-whisper is not supported as fallback")
+                            pass
                 
-                print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
-                perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
-                            # openai-whisper互換形式に変換
-                            segments = []
-                            all_text = []
-                            for seg in segments_iter:
-                                text = seg.text.strip()
-                                
-                                # ハルシネーション判定（韓国語・絵文字・繰り返し）
-                                is_halluc = _is_hallucination(text)
-                                
-                                # セグメント全体がハルシネーション確定 → 即スキップ
-                                # ワードレベル救出はしない（1文字ワードで誤通過するため）
-                                if is_halluc:
-                                    try:
-                                        print(f"[{sid}] [WHISPER] Filtered hallucination [{seg.start:.1f}s-{seg.end:.1f}s]: {text[:80]}")
-                                    except Exception:
-                                        print(f"[{sid}] [WHISPER] Filtered hallucination segment [{seg.start:.1f}s-{seg.end:.1f}s]")
+                if not use_groq and not _is_faster:
+                    # openai-whisper API
+                    import torch as _torch
+                    opts = dict(
+                        language="ja",
+                        word_timestamps=True,
+                        initial_prompt="歌",
+                        condition_on_previous_text=False,
+                        no_speech_threshold=0.4,
+                        fp16=_torch.cuda.is_available(),
+                    )
+                    try:
+                        return model.transcribe(str(wav), **opts)
+                    except RuntimeError as e:
+                        print(f"[{sid}] [WHISPER] [WARN] RuntimeError: {e}, retrying...")
+                        if _torch.cuda.is_available():
+                            _torch.cuda.empty_cache()
+                        return model.transcribe(str(wav), **opts)
+                    finally:
+                        # openai-whisper完了後にVRAM解放
+                        gc.collect()
+                        if _torch.cuda.is_available():
+                            _torch.cuda.empty_cache()
+                            print(f"[{sid}] [WHISPER] VRAM cache cleared")
+                
+                # --- Groq または faster-whisper の場合の共通処理 ---
+                try:
+                    print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
+                    perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
+                    
+                    # openai-whisper互換形式に変換
+                    segments = []
+                    all_text = []
+                    for seg in segments_iter:
+                        text = seg.text.strip()
+                        
+                        # ハルシネーション判定（韓国語・絵文字・繰り返し）
+                        is_halluc = _is_hallucination(text)
+                        
+                        # セグメント全体がハルシネーション確定 → 即スキップ
+                        if is_halluc:
+                            try:
+                                print(f"[{sid}] [WHISPER] Filtered hallucination [{seg.start:.1f}s-{seg.end:.1f}s]: {text[:80]}")
+                            except Exception:
+                                print(f"[{sid}] [WHISPER] Filtered hallucination segment [{seg.start:.1f}s-{seg.end:.1f}s]")
+                            continue
+                        
+                        # ワードタイムスタンプがある場合: ワードレベルで部分的なハルシネーションを除去
+                        if seg.words:
+                            import re
+                            words_list = [
+                                {'start': w.start, 'end': w.end, 'word': w.word}
+                                for w in seg.words
+                            ]
+                            _hiragana_re = re.compile(r'[\u3040-\u309F]')
+                            _katakana_re = re.compile(r'[\u30A0-\u30FF]')
+                            _kanji_re = re.compile(r'[\u4E00-\u9FFF]')
+                            # 音楽クレジット系ハルシネーションキーワード
+                            _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏', '何',
+                                          'Movie', 'movie', 'Music', 'music', 'Video', 'video',
+                                          'Subscribe', 'subscribe', 'Sound', 'sound'}
+                            _punct_re = re.compile(r'^[\s\u3000・、。\-―─…♪♫\u200b]+$')
+                            _hangul_re_local = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF]')
+                            
+                            clean_words = []
+                            found_real = False
+                            for w in words_list:
+                                word_text = w['word'].strip()
+                                if not word_text:
                                     continue
-                                
-                                # ワードタイムスタンプがある場合: ワードレベルで部分的なハルシネーションを除去
-                                # （セグメント自体はis_halluc=Falseだが、冒頭に「作詞・」等が混入している場合）
-                                if seg.words:
-                                    import re
-                                    words_list = [
-                                        {'start': w.start, 'end': w.end, 'word': w.word}
-                                        for w in seg.words
-                                    ]
-                                    _hiragana_re = re.compile(r'[\u3040-\u309F]')
-                                    _katakana_re = re.compile(r'[\u30A0-\u30FF]')
-                                    _kanji_re = re.compile(r'[\u4E00-\u9FFF]')
-                                    # 音楽クレジット系ハルシネーションキーワード
-                                    _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏', '何',
-                                                  'Movie', 'movie', 'Music', 'music', 'Video', 'video',
-                                                  'Subscribe', 'subscribe', 'Sound', 'sound'}
-                                    _punct_re = re.compile(r'^[\s\u3000・、。\-―─…♪♫\u200b]+$')
-                                    _hangul_re_local = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF]')
-                                    
-                                    clean_words = []
-                                    found_real = False
-                                    for w in words_list:
-                                        word_text = w['word'].strip()
-                                        if not word_text:
-                                            continue
-                                        # 韓国語ワード → 常にスキップ
-                                        if _hangul_re_local.search(word_text):
-                                            continue
-                                        if not found_real:
-                                            # ハルシネーションキーワードを含む → スキップ
-                                            if any(kw in word_text for kw in _halluc_kw):
-                                                continue
-                                            # 中黒・スペースだけ → スキップ
-                                            if _punct_re.match(word_text):
-                                                continue
-                                            # ひらがな/カタカナ/漢字を含む = 実際の歌詞開始
-                                            if (_hiragana_re.search(word_text) or 
-                                                _katakana_re.search(word_text) or
-                                                _kanji_re.search(word_text)):
-                                                found_real = True
-                                            else:
-                                                continue
-                                        clean_words.append(w)
-                                    
-                                    if clean_words:
-                                        words_list = clean_words
-                                        cleaned_text = ''.join(w['word'] for w in clean_words).strip()
-                                        removed_count = len(seg.words) - len(clean_words)
-                                        if removed_count > 0:
-                                            print(f"[{sid}] [WHISPER] Cleaned segment [{seg.start:.1f}s-{seg.end:.1f}s]: "
-                                                  f"removed {removed_count} halluc words, kept: {cleaned_text[:60]}")
-                                        seg_dict = {
-                                            'id': seg.id,
-                                            'start': clean_words[0]['start'],
-                                            'end': clean_words[-1].get('end', seg.end),
-                                            'text': cleaned_text,
-                                            'words': words_list,
-                                        }
-                                        segments.append(seg_dict)
-                                        all_text.append(cleaned_text)
+                                # 韓国語ワード → 常にスキップ
+                                if _hangul_re_local.search(word_text):
+                                    continue
+                                if not found_real:
+                                    # ハルシネーションキーワードを含む → スキップ
+                                    if any(kw in word_text for kw in _halluc_kw):
                                         continue
+                                    # 中黒・スペースだけ → スキップ
+                                    if _punct_re.match(word_text):
+                                        continue
+                                    # ひらがな/カタカナ/漢字を含む = 実際の歌詞開始
+                                    if (_hiragana_re.search(word_text) or 
+                                        _katakana_re.search(word_text) or
+                                        _kanji_re.search(word_text)):
+                                        found_real = True
                                     else:
-                                        # 全ワードがハルシネーション
-                                        print(f"[{sid}] [WHISPER] All words hallucination [{seg.start:.1f}s-{seg.end:.1f}s], skipping")
                                         continue
-                                
-                                # ワードタイムスタンプなし: セグメントレベルで判定
-                                if is_halluc:
-                                    try:
-                                        print(f"[{sid}] [WHISPER] Filtered hallucination [{seg.start:.1f}s-{seg.end:.1f}s]: {text[:80]}")
-                                    except Exception:
-                                        print(f"[{sid}] [WHISPER] Filtered hallucination segment [{seg.start:.1f}s-{seg.end:.1f}s]")
-                                    continue
-                                
+                                clean_words.append(w)
+                            
+                            if clean_words:
+                                words_list = clean_words
+                                cleaned_text = ''.join(w['word'] for w in clean_words).strip()
+                                removed_count = len(seg.words) - len(clean_words)
+                                if removed_count > 0:
+                                    print(f"[{sid}] [WHISPER] Cleaned segment [{seg.start:.1f}s-{seg.end:.1f}s]: "
+                                          f"removed {removed_count} halluc words, kept: {cleaned_text[:60]}")
                                 seg_dict = {
                                     'id': seg.id,
-                                    'start': seg.start,
-                                    'end': seg.end,
-                                    'text': text,
+                                    'start': clean_words[0]['start'],
+                                    'end': clean_words[-1].get('end', seg.end),
+                                    'text': cleaned_text,
+                                    'words': words_list,
                                 }
                                 segments.append(seg_dict)
-                                all_text.append(text)
-                            print(f"[{sid}] [WHISPER] faster-whisper done: {len(segments)} segments", flush=True)
-                            # NOTE: initial_prompt は既に削除済み。
-                            # 以前のprompt固有テキスト除去ロジックは廃止。
+                                all_text.append(cleaned_text)
+                                continue
+                            else:
+                                # 全ワードがハルシネーション
+                                print(f"[{sid}] [WHISPER] All words hallucination [{seg.start:.1f}s-{seg.end:.1f}s], skipping")
+                                continue
+                        
+                        # ワードタイムスタンプなし: セグメントレベルで判定
+                        seg_dict = {
+                            'id': seg.id,
+                            'start': seg.start,
+                            'end': seg.end,
+                            'text': text,
+                        }
+                        segments.append(seg_dict)
+                        all_text.append(text)
+                    print(f"[{sid}] [WHISPER] faster-whisper done: {len(segments)} segments", flush=True)
+                    
+                    # --- ハルシネーション除去で生じたギャップを再認識 ---
+                    try:
+                        import librosa
+                        import soundfile as sf
+                        import tempfile
+                        
+                        # 最初のセグメントの開始時刻が遅い場合、冒頭にギャップがある
+                        first_seg_start = segments[0]['start'] if segments else 0
+                        # 歌の冒頭で10秒以上のギャップがあれば再認識対象
+                        if first_seg_start > 15.0 and segments:
+                            gap_start = max(0, first_seg_start - 10)  # 歌い出し直前の10秒に絞る
+                            gap_end = first_seg_start + 1  # 少し重複
+                            print(f"[{sid}] [WHISPER] Detected gap before first lyrics: {gap_start:.1f}s - {gap_end:.1f}s, re-transcribing...")
                             
-                            # --- ハルシネーション除去で生じたギャップを再認識 ---
-                            # ワードレベルフィルタで全ワード除去されたセグメントがあると、
-                            # その時間帯の歌詞が消失する（例: 「君を忘れない」）。
-                            # 消失区間を特定し、その部分だけ再度Whisperで認識する。
+                            # 部分音声を切り出して再認識
+                            from waveform_utils import load_audio_cached
+                            y_full, sr_full = load_audio_cached(str(wav), sr=16000, mono=True)
+                            start_sample = int(gap_start * sr_full)
+                            end_sample = min(int(gap_end * sr_full), len(y_full))
+                            y_gap = y_full[start_sample:end_sample]
+                            
+                            # 一時ファイルに書き出し
+                            gap_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                            sf.write(gap_wav.name, y_gap, sr_full)
+                            gap_wav.close()
+                            
                             try:
-                                import librosa
-                                import soundfile as sf
-                                import tempfile
+                                # 既存modelの内部状態汚染を回避するため、小型の別インスタンスで再認識
+                                from faster_whisper import WhisperModel as _GapWM
+                                _gap_model = _GapWM("small", device="cuda", compute_type="float16")
+                                gap_segs, gap_info = _gap_model.transcribe(
+                                    gap_wav.name,
+                                    language="ja",
+                                    word_timestamps=True,
+                                    condition_on_previous_text=False,
+                                    no_speech_threshold=0.1,
+                                    vad_filter=False,
+                                    beam_size=5,
+                                    temperature=[0.0, 0.2, 0.4],
+                                )
                                 
-                                # 最初のセグメントの開始時刻が遅い場合、冒頭にギャップがある
-                                first_seg_start = segments[0]['start'] if segments else 0
-                                # 歌の冒頭で10秒以上のギャップがあれば再認識対象
-                                if first_seg_start > 15.0 and segments:
-                                    gap_start = max(0, first_seg_start - 10)  # 歌い出し直前の10秒に絞る
-                                    gap_end = first_seg_start + 1  # 少し重複
-                                    print(f"[{sid}] [WHISPER] Detected gap before first lyrics: {gap_start:.1f}s - {gap_end:.1f}s, re-transcribing...")
-                                    
-                                    # 部分音声を切り出して再認識
-                                    from waveform_utils import load_audio_cached
-                                    y_full, sr_full = load_audio_cached(str(wav), sr=16000, mono=True)
-                                    start_sample = int(gap_start * sr_full)
-                                    end_sample = min(int(gap_end * sr_full), len(y_full))
-                                    y_gap = y_full[start_sample:end_sample]
-                                    
-                                    # 一時ファイルに書き出し
-                                    gap_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
-                                    sf.write(gap_wav.name, y_gap, sr_full)
-                                    gap_wav.close()
-                                    
+                                gap_results = []
+                                gap_seg_count = 0
+                                for gs in gap_segs:
+                                    gt = gs.text.strip()
+                                    gap_seg_count += 1
+                                    is_gap_halluc = _is_hallucination(gt) if gt else True
                                     try:
-                                        # 既存modelの内部状態汚染を回避するため、
-                                        # 小型の別インスタンスで再認識
-                                        from faster_whisper import WhisperModel as _GapWM
-                                        _gap_model = _GapWM("small", device="cuda", compute_type="float16")
-                                        gap_segs, gap_info = _gap_model.transcribe(
-                                            gap_wav.name,
-                                            language="ja",
-                                            word_timestamps=True,
-                                            condition_on_previous_text=False,
-                                            no_speech_threshold=0.1,
-                                            vad_filter=False,
-                                            beam_size=5,
-                                            temperature=[0.0, 0.2, 0.4],
-                                        )
-                                        
-                                        gap_results = []
-                                        gap_seg_count = 0
-                                        for gs in gap_segs:
-                                            gt = gs.text.strip()
-                                            gap_seg_count += 1
-                                            is_gap_halluc = _is_hallucination(gt) if gt else True
-                                            # cp932ログ化け防止: ファイルにUTF-8で書く
-                                            try:
-                                                gap_debug_path = session_dir / "gap_debug.txt" if 'session_dir' in dir() else None
-                                                if gap_debug_path:
-                                                    with open(gap_debug_path, 'a', encoding='utf-8') as gf:
-                                                        gf.write(f"gap[{gap_seg_count}]: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} '{gt}'\n")
-                                            except Exception:
-                                                pass
-                                            try:
-                                                print(f"[{sid}] [WHISPER] Gap raw seg: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} len={len(gt)}")
-                                            except Exception:
-                                                print(f"[{sid}] [WHISPER] Gap raw seg: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} (text unprintable)")
-                                            if not gt or is_gap_halluc:
-                                                continue
-                                            # 時刻をオリジナル音声の時刻に補正
-                                            gap_words = []
-                                            if gs.words:
-                                                for gw in gs.words:
-                                                    gap_words.append({
-                                                        'start': gw.start + gap_start,
-                                                        'end': gw.end + gap_start,
-                                                        'word': gw.word,
-                                                    })
-                                            gap_seg_dict = {
-                                                'id': -1,
-                                                'start': gs.start + gap_start,
-                                                'end': gs.end + gap_start,
-                                                'text': gt,
-                                                'words': gap_words if gap_words else None,
-                                            }
-                                            gap_results.append(gap_seg_dict)
-                                        
-                                        if gap_results:
-                                            # 短すぎるセグメント(1-2文字)はノイズ、除去
-                                            # first_seg_start以降のセグメントも重複なので除去
-                                            gap_results = [
-                                                gr for gr in gap_results
-                                                if len(gr['text']) >= 3 and gr['start'] < first_seg_start - 0.5
-                                            ]
-                                        if gap_results:
-                                            # ギャップセグメントを先頭に挿入
-                                            for gr in gap_results:
-                                                try:
-                                                    print(f"[{sid}] [WHISPER] Gap recovery: '{gr['text'][:50]}' at {gr['start']:.1f}s")
-                                                except Exception:
-                                                    print(f"[{sid}] [WHISPER] Gap recovery: (text) at {gr['start']:.1f}s")
-                                            segments = gap_results + segments
-                                            print(f"[{sid}] [WHISPER] Recovered {len(gap_results)} segments from gap")
-                                        else:
-                                            print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments found (raw={gap_seg_count})")
-                                    finally:
-                                        import os
-                                        os.unlink(gap_wav.name)
-                                        # ギャップモデルのVRAM解放
+                                        gap_debug_path = session_dir / "gap_debug.txt" if 'session_dir' in dir() else None
+                                        if gap_debug_path:
+                                            with open(gap_debug_path, 'a', encoding='utf-8') as gf:
+                                                gf.write(f"gap[{gap_seg_count}]: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} '{gt}'\n")
+                                    except Exception:
+                                        pass
+                                    try:
+                                        print(f"[{sid}] [WHISPER] Gap raw seg: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} len={len(gt)}")
+                                    except Exception:
+                                        print(f"[{sid}] [WHISPER] Gap raw seg: [{gs.start:.1f}s-{gs.end:.1f}s] halluc={is_gap_halluc} (text unprintable)")
+                                    if not gt or is_gap_halluc:
+                                        continue
+                                    # 時刻をオリジナル音声の時刻に補正
+                                    gap_words = []
+                                    if gs.words:
+                                        for gw in gs.words:
+                                            gap_words.append({
+                                                'start': gw.start + gap_start,
+                                                'end': gw.end + gap_start,
+                                                'word': gw.word,
+                                            })
+                                    gap_seg_dict = {
+                                        'id': -1,
+                                        'start': gs.start + gap_start,
+                                        'end': gs.end + gap_start,
+                                        'text': gt,
+                                        'words': gap_words if gap_words else None,
+                                    }
+                                    gap_results.append(gap_seg_dict)
+                                
+                                if gap_results:
+                                    # 短すぎるセグメント(1-2文字)はノイズ、除去
+                                    # first_seg_start以降のセグメントも重複なので除去
+                                    gap_results = [
+                                        gr for gr in gap_results
+                                        if len(gr['text']) >= 3 and gr['start'] < first_seg_start - 0.5
+                                    ]
+                                if gap_results:
+                                    for gr in gap_results:
                                         try:
-                                            del _gap_model
-                                            import torch
-                                            if torch.cuda.is_available():
-                                                torch.cuda.empty_cache()
+                                            print(f"[{sid}] [WHISPER] Gap recovery: '{gr['text'][:50]}' at {gr['start']:.1f}s")
                                         except Exception:
-                                            pass
-                                        
-                            except Exception as gap_err:
-                                print(f"[{sid}] [WHISPER] Gap recovery failed (non-fatal): {gap_err}")
-                            
-                            perf_log.append(f"[DEBUG] Whisper segments: {len(segments)}")
-                            perf_log.append(f"[DEBUG] First segment: {segments[0].get('text','')[:80]}" if segments else "[DEBUG] No segments")
-                            return {'segments': segments, 'text': ''.join(s.get('text','') for s in segments)}
-                        except Exception as e:
-                            print(f"[{sid}] [WHISPER] [ERROR] faster-whisper error: {type(e).__name__}: {e}")
-                            import traceback
-                            traceback.print_exc()
-                            return {'segments': [], 'text': ''}
-                        finally:
-                            # Whisper完了後にVRAM解放
-                            gc.collect()
-                            import torch as _tc
-                            if _tc.cuda.is_available():
-                                _tc.cuda.empty_cache()
-                                print(f"[{sid}] [WHISPER] VRAM cache cleared")
-                    else:
-                        # openai-whisper API
-                        import torch as _torch
-                        opts = dict(
-                            language="ja",
-                            word_timestamps=True,
-                            initial_prompt="歌",
-                            condition_on_previous_text=False,
-                            no_speech_threshold=0.4,
-                            fp16=_torch.cuda.is_available(),
-                        )
-                        try:
-                            return model.transcribe(str(wav), **opts)
-                        except RuntimeError as e:
-                            print(f"[{sid}] [WHISPER] [WARN] RuntimeError: {e}, retrying...")
-                            if _torch.cuda.is_available():
-                                _torch.cuda.empty_cache()
-                            return model.transcribe(str(wav), **opts)
-                        finally:
-                            # openai-whisper完了後にVRAM解放
-                            gc.collect()
-                            if _torch.cuda.is_available():
-                                _torch.cuda.empty_cache()
-                                print(f"[{sid}] [WHISPER] VRAM cache cleared")
+                                            print(f"[{sid}] [WHISPER] Gap recovery: (text) at {gr['start']:.1f}s")
+                                    segments = gap_results + segments
+                                    print(f"[{sid}] [WHISPER] Recovered {len(gap_results)} segments from gap")
+                                else:
+                                    print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments found (raw={gap_seg_count})")
+                            finally:
+                                import os
+                                os.unlink(gap_wav.name)
+                                # ギャップモデルのVRAM解放
+                                try:
+                                    del _gap_model
+                                    import torch
+                                    if torch.cuda.is_available():
+                                        torch.cuda.empty_cache()
+                                except Exception:
+                                    pass
+                                
+                    except Exception as gap_err:
+                        print(f"[{sid}] [WHISPER] Gap recovery failed (non-fatal): {gap_err}")
+                    
+                    perf_log.append(f"[DEBUG] Whisper segments: {len(segments)}")
+                    perf_log.append(f"[DEBUG] First segment: {segments[0].get('text','')[:80]}" if segments else "[DEBUG] No segments")
+                    return {'segments': segments, 'text': ''.join(s.get('text','') for s in segments)}
+                
+                except Exception as e:
+                    print(f"[{sid}] [WHISPER] [ERROR] faster-whisper error: {type(e).__name__}: {e}")
+                    import traceback
+                    traceback.print_exc()
+                    return {'segments': [], 'text': ''}
+                
+                finally:
+                    # Whisper完了後にVRAM解放
+                    gc.collect()
+                    import torch as _tc
+                    if _tc.cuda.is_available():
+                        _tc.cuda.empty_cache()
+                        print(f"[{sid}] [WHISPER] VRAM cache cleared")
             
             futures['whisper_res'] = executor.submit(_whisper_with_lock, whisper_model, wav_path, session_id) if whisper_model else None
             

@@ -32,7 +32,7 @@ RUN pip install --no-cache-dir Cython numpy setuptools wheel
 RUN pip install --no-cache-dir git+https://github.com/CPJKU/madmom.git
 RUN pip install --no-cache-dir -r requirements.txt
 RUN pip install --no-cache-dir torch torchaudio --index-url https://download.pytorch.org/whl/cpu
-RUN pip install --no-cache-dir openai-whisper
+RUN pip install --no-cache-dir openai-whisper faster-whisper
 RUN pip install --no-cache-dir demucs
 RUN pip install --no-cache-dir onnxruntime
 RUN pip install --no-cache-dir --no-deps basic-pitch
