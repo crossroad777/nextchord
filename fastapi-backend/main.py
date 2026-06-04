@@ -578,79 +578,108 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
 def download_youtube_audio(url: str, output_dir: Path) -> tuple:
     """Download audio from YouTube using yt-dlp. Returns (audio_path, metadata_dict)."""
     import os
-    proxy = os.getenv("YOUTUBE_PROXY")
+    import tempfile
     
-    # タイトルとアーティスト名を取得
-    meta = {"title": "YouTube Video", "artist": ""}
+    proxy = os.getenv("YOUTUBE_PROXY")
+    cookies_content = os.getenv("YOUTUBE_COOKIES")
+    
+    cookies_file = None
+    if cookies_content and len(cookies_content.strip()) > 0:
+        try:
+            # Write cookies to a temporary file
+            temp_cookies = tempfile.NamedTemporaryFile(suffix='.txt', delete=False, mode='w', encoding='utf-8')
+            temp_cookies.write(cookies_content)
+            temp_cookies.close()
+            cookies_file = temp_cookies.name
+            print(f"[YouTube] Using YOUTUBE_COOKIES from environment variable (temp file: {cookies_file})")
+        except Exception as e:
+            print(f"[YouTube] Failed to write temporary cookies file: {e}")
+            
     try:
-        info_cmd = [
-            YT_DLP_PATH, 
-            "--no-playlist", 
-            "--no-warnings", 
-            "--no-check-certificates", 
-            "--legacy-server-connect", 
+        # タイトルとアーティスト名を取得
+        meta = {"title": "YouTube Video", "artist": ""}
+        try:
+            info_cmd = [
+                YT_DLP_PATH, 
+                "--no-playlist", 
+                "--no-warnings", 
+                "--no-check-certificates", 
+                "--legacy-server-connect", 
+                "--impersonate", "chrome",
+                "--extractor-args", "youtube:player_client=android,web", 
+                "--print", "%(title)s\n%(artist,uploader)s"
+            ]
+            if proxy:
+                info_cmd.extend(["--proxy", proxy])
+            if cookies_file:
+                info_cmd.extend(["--cookies", cookies_file])
+            info_cmd.append(url)
+            
+            info_result = subprocess.run(info_cmd, capture_output=True, text=True, timeout=15)
+            if info_result.returncode == 0 and info_result.stdout.strip():
+                lines = info_result.stdout.strip().split("\n")
+                if len(lines) >= 1 and lines[0].strip():
+                    meta["title"] = lines[0].strip()
+                if len(lines) >= 2 and lines[1].strip() and lines[1].strip() != "NA":
+                    meta["artist"] = lines[1].strip()
+                print(f"[YouTube] Title: {meta['title']}, Artist: {meta['artist']}")
+        except Exception as e:
+            print(f"[YouTube] Could not get metadata: {e}")
+        
+        # Use a separate temporary name for downloading to avoid lock/collision with converted.wav
+        temp_name = "download_temp"
+        output_path = output_dir / temp_name
+        
+        # yt-dlp コマンド
+        cmd = [
+            YT_DLP_PATH,
+            "--no-playlist",
+            "--no-warnings", # Suppress benign runtime warnings
+            "--no-check-certificates",
+            "--legacy-server-connect",
             "--impersonate", "chrome",
-            "--extractor-args", "youtube:player_client=android,web", 
-            "--print", "%(title)s\n%(artist,uploader)s"
+            "--extractor-args", "youtube:player_client=android,web",
+            "-x",
+            "--audio-format", "wav",
+            "--audio-quality", "0",
+            "-o", str(output_path) + ".%(ext)s"
         ]
         if proxy:
-            info_cmd.extend(["--proxy", proxy])
-        info_cmd.append(url)
+            cmd.extend(["--proxy", proxy])
+        if cookies_file:
+            cmd.extend(["--cookies", cookies_file])
+        cmd.append(url)
         
-        info_result = subprocess.run(info_cmd, capture_output=True, text=True, timeout=15)
-        if info_result.returncode == 0 and info_result.stdout.strip():
-            lines = info_result.stdout.strip().split("\n")
-            if len(lines) >= 1 and lines[0].strip():
-                meta["title"] = lines[0].strip()
-            if len(lines) >= 2 and lines[1].strip() and lines[1].strip() != "NA":
-                meta["artist"] = lines[1].strip()
-            print(f"[YouTube] Title: {meta['title']}, Artist: {meta['artist']}")
-    except Exception as e:
-        print(f"[YouTube] Could not get metadata: {e}")
-    
-    # Use a separate temporary name for downloading to avoid lock/collision with converted.wav
-    temp_name = "download_temp"
-    output_path = output_dir / temp_name
-    
-    # yt-dlp コマンド
-    cmd = [
-        YT_DLP_PATH,
-        "--no-playlist",
-        "--no-warnings", # Suppress benign runtime warnings
-        "--no-check-certificates",
-        "--legacy-server-connect",
-        "--impersonate", "chrome",
-        "--extractor-args", "youtube:player_client=android,web",
-        "-x",
-        "--audio-format", "wav",
-        "--audio-quality", "0",
-        "-o", str(output_path) + ".%(ext)s"
-    ]
-    if proxy:
-        cmd.extend(["--proxy", proxy])
-    cmd.append(url)
-    
-    print(f"Downloading YouTube audio (temp): {url} (Proxy={proxy is not None})")
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    
-    if result.returncode != 0:
-        print(f"yt-dlp error: {result.stderr}")
-        raise Exception(f"YouTube download failed: {result.stderr}")
-    
-    # Windowsでファイルロックが発生する場合があるため、待機
-    time.sleep(1)
-    
-    # 保存されたファイルを確認
-    wav_path = output_dir / f"{temp_name}.wav"
-    if wav_path.exists():
-        return wav_path, meta
-    
-    # 他の形式で保存された可能性を確認
-    for f in output_dir.glob(f"{temp_name}.*"):
-        if f.suffix.lower() in [".mp3", ".m4a", ".webm", ".opus", ".wav"]:
-            return f, meta
-            
-    raise FileNotFoundError("Could not find downloaded YouTube audio file.")
+        print(f"Downloading YouTube audio (temp): {url} (Proxy={proxy is not None}, Cookies={cookies_file is not None})")
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode != 0:
+            print(f"yt-dlp error: {result.stderr}")
+            raise Exception(f"YouTube download failed: {result.stderr}")
+        
+        # Windowsでファイルロックが発生する場合があるため、待機
+        time.sleep(1)
+        
+        # 保存されたファイルを確認
+        wav_path = output_dir / f"{temp_name}.wav"
+        if wav_path.exists():
+            return wav_path, meta
+        
+        # 他の形式で保存された可能性を確認
+        for f in output_dir.glob(f"{temp_name}.*"):
+            if f.suffix.lower() in [".mp3", ".m4a", ".webm", ".opus", ".wav"]:
+                return f, meta
+                
+        raise FileNotFoundError("Could not find downloaded YouTube audio file.")
+        
+    finally:
+        # Clean up temporary cookies file
+        if cookies_file and os.path.exists(cookies_file):
+            try:
+                os.remove(cookies_file)
+                print("[YouTube] Temporary cookies file cleaned up")
+            except Exception as ce:
+                print(f"[YouTube] Failed to remove temporary cookies file: {ce}")
 
 @app.post("/upload/youtube", response_model=UploadResponse)
 async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequest):
