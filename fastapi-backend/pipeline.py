@@ -592,14 +592,17 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         # faster-whisper API
                         try:
                             print(f"[{sid}] [WHISPER] faster-whisper transcribe starting...", flush=True)
+                            # CPU環境での処理速度極限化のためのチューニング
+                            # beam_sizeを5->1へ下げることでCPU負荷を数分の一にし、
+                            # vad_filterをTrueにすることで無音区間のスキャンをスキップして高速化
                             segments_iter, info = model.transcribe(
                                 str(wav),
                                 language="ja",
                                 word_timestamps=True,
                                 condition_on_previous_text=False,
                                 no_speech_threshold=0.3,
-                                vad_filter=False,
-                                beam_size=5,
+                                vad_filter=True, # 無音区間をフィルタリングして高速化
+                                beam_size=1,     # Greedy searchでCPUでの推論を爆速化
                                 temperature=0.0,
                             )
                             print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
