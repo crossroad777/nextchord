@@ -489,7 +489,8 @@ def estimate_key_from_audio(wav_path: str) -> str:
     KEYS = ['C', 'C#', 'D', 'Eb', 'E', 'F', 'F#', 'G', 'Ab', 'A', 'Bb', 'B']
     
     try:
-        y, sr = librosa.load(wav_path, sr=22050, mono=True)
+        from waveform_utils import load_audio_cached
+        y, sr = load_audio_cached(wav_path, sr=22050, mono=True)
         duration = len(y) / sr
         print(f"[ChromaKey] Audio loaded: {duration:.1f}s, sr={sr}")
         

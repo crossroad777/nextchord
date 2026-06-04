@@ -62,3 +62,21 @@ def generate_waveform(wav_path, n_points=2000):
     except Exception as e:
         print(f"Error extracting waveform: {e}")
         return []
+
+
+from functools import lru_cache
+import librosa
+import time as _time
+
+@lru_cache(maxsize=16)
+def load_audio_cached(audio_path, sr=22050, mono=True):
+    """
+    スレッド間共有のLRUキャッシュ付き音声ロード。
+    デコード結果をメモリ上に保持し、重複ロード時のI/Oおよびデコード処理時間を0秒にする。
+    """
+    t0 = _time.time()
+    path_str = str(audio_path)
+    y, sr_out = librosa.load(path_str, sr=sr, mono=mono)
+    elapsed = _time.time() - t0
+    print(f"[waveform_utils] load_audio_cached: Loaded {path_str} at sr={sr} in {elapsed:.2f}s (new load)")
+    return y, sr_out

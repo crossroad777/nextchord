@@ -139,7 +139,8 @@ def _estimate_time_signature(beat_times, bpm, wav_path=None):
     # --- onset strengthベースのアクセントパターン解析 ---
     if wav_path is not None:
         try:
-            y, sr = librosa.load(str(wav_path), sr=22050, mono=True)
+            from waveform_utils import load_audio_cached
+            y, sr = load_audio_cached(str(wav_path), sr=22050, mono=True)
             onset_env = librosa.onset.onset_strength(y=y, sr=sr)
             times = librosa.times_like(onset_env, sr=sr)
 
@@ -248,7 +249,8 @@ def _fast_beat_detect(wav_path):
     import time as _time
     t0 = _time.time()
     try:
-        y, sr = librosa.load(str(wav_path), sr=22050, mono=True)
+        from waveform_utils import load_audio_cached
+        y, sr = load_audio_cached(str(wav_path), sr=22050, mono=True)
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units='frames')
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
         print(f"[BEATS] librosa beat_track: {len(beat_times)} beats, tempo={float(tempo) if hasattr(tempo,'__float__') else tempo}, {_time.time()-t0:.1f}s")
@@ -326,7 +328,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             # NOTE: このlibrosa.loadはThreadPoolExecutor内で実行されるため、
             # ビートフォールバック(L583付近)のlibrosa.loadとは共有しない。
             # 異なるスレッドでのndarray共有は競合リスクがあるため意図的に分離。
-            y_full, sr_full = librosa.load(str(wav_p), sr=22050)
+            from waveform_utils import load_audio_cached
+            y_full, sr_full = load_audio_cached(str(wav_p), sr=22050)
             
             # --- Demucs 分離済みステムを探す (ボーカル除去) ---
             # 優先: htdemucs_6s/guitar.wav > htdemucs/other.wav > raw WAV
@@ -722,7 +725,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     print(f"[{sid}] [WHISPER] Detected gap before first lyrics: {gap_start:.1f}s - {gap_end:.1f}s, re-transcribing...")
                                     
                                     # 部分音声を切り出して再認識
-                                    y_full, sr_full = librosa.load(str(wav), sr=16000, mono=True)
+                                    from waveform_utils import load_audio_cached
+                                    y_full, sr_full = load_audio_cached(str(wav), sr=16000, mono=True)
                                     start_sample = int(gap_start * sr_full)
                                     end_sample = min(int(gap_end * sr_full), len(y_full))
                                     y_gap = y_full[start_sample:end_sample]
@@ -1143,7 +1147,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             print(f"[{session_id}] [BEATS] Using librosa beat_times directly: {len(beats_raw)} beats")
         else:
             print(f"[{session_id}] [WARN] _fast_beat_detect returned empty, using inline librosa fallback")
-            y_beat, sr_beat = librosa.load(str(wav_path), sr=22050)
+            from waveform_utils import load_audio_cached
+            y_beat, sr_beat = load_audio_cached(str(wav_path), sr=22050)
             tempo, beat_frames = librosa.beat.beat_track(y=y_beat, sr=sr_beat)
             beats_raw = librosa.frames_to_time(beat_frames, sr=sr_beat)
         v_time = np.sort(np.array(beats_raw).astype(float))

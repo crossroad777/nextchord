@@ -103,8 +103,8 @@ def detect_techniques(
     if wav_path and song_type != 'band':
         # Solo mode: load audio + run pyin for F0-based technique detection
         try:
-            import librosa
-            audio, audio_sr = librosa.load(wav_path, sr=F0_SR, mono=True)
+            from waveform_utils import load_audio_cached
+            audio, audio_sr = load_audio_cached(wav_path, sr=F0_SR, mono=True)
             print(f"[Technique] Audio loaded: {len(audio)/audio_sr:.1f}s @ {audio_sr}Hz")
             global_f0, voiced, _ = librosa.pyin(
                 audio,
@@ -204,8 +204,8 @@ def detect_techniques(
     # --- Band mode: lazy-load audio for palm mute / dead note detection ---
     if audio is None and wav_path and song_type == 'band':
         try:
-            import librosa
-            audio, audio_sr = librosa.load(wav_path, sr=F0_SR, mono=True)
+            from waveform_utils import load_audio_cached
+            audio, audio_sr = load_audio_cached(wav_path, sr=F0_SR, mono=True)
             print(f"[Technique] Band mode: audio loaded for spectral analysis: {len(audio)/audio_sr:.1f}s")
         except Exception as e:
             print(f"[Technique] Band mode: audio load failed: {e}")

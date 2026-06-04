@@ -1,12 +1,36 @@
 import React from 'react';
 import { getChordFingering } from '../utils/chordDictionary';
+import { findChordShape } from './InstrumentPanel';
 
-export default function GuitarChord({ chordName, transpose = 0 }) {
-    const fingering = getChordFingering(chordName);
-    if (!fingering) return null;
+export default function GuitarChord({ chordName, transpose = 0, tuning = 'standard' }) {
+    // Look up tuning-aware shape
+    const shape = findChordShape(chordName, tuning);
+    if (!shape) return null;
 
-    const baseFret = fingering.baseFret || 1;
-    const { frets, barre } = fingering;
+    const { frets } = shape;
+
+    // Calculate baseFret (startFret)
+    const nonZeroFrets = frets.filter(f => f > 0);
+    const maxFret = nonZeroFrets.length > 0 ? Math.max(...nonZeroFrets) : 0;
+    const minFret = nonZeroFrets.length > 0 ? Math.min(...nonZeroFrets) : 0;
+    const baseFret = maxFret > 4 ? minFret : 1;
+
+    // Convert barre from shape.barre (number) to object { fret, from, to } for GuitarChord rendering
+    let barre = null;
+    if (shape.barre) {
+        const barreFret = shape.barre;
+        const barreStrings = frets.reduce((acc, f, idx) => {
+            if (f >= barreFret) acc.push(idx);
+            return acc;
+        }, []);
+        if (barreStrings.length >= 2) {
+            barre = {
+                fret: barreFret,
+                from: Math.min(...barreStrings),
+                to: Math.max(...barreStrings)
+            };
+        }
+    }
 
     // Dimensions
     const startX = 12;

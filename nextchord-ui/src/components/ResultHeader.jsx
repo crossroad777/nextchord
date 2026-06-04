@@ -9,11 +9,11 @@ import {
 import { Metronome } from './Metronome';
 
 const TUNINGS = [
-  { value: 'standard', label: 'Standard' },
-  { value: 'half_down', label: 'Half Down' },
-  { value: 'drop_d', label: 'Drop D' },
-  { value: 'open_g', label: 'Open G' },
-  { value: 'open_d', label: 'Open D' },
+  { value: 'standard', label: 'レギュラー' },
+  { value: 'half_down', label: '半音下げ' },
+  { value: 'drop_d', label: 'ドロップD' },
+  { value: 'open_g', label: 'オープンG' },
+  { value: 'open_d', label: 'オープンD' },
   { value: 'dadgad', label: 'DADGAD' },
 ];
 
@@ -145,7 +145,7 @@ export function ResultHeader({
         {/* 曲情報バッジ — 右寄せ */}
         <div className="flex items-center gap-2 flex-shrink-0">
           <span className="px-3 py-1.5 bg-[var(--gf-surface-2)] rounded-lg text-[11px] font-black text-[var(--gf-text)] border border-[var(--gf-border)]">
-            Key: {getTransposedKey(session.result?.key, transpose - capo) || '--'}{capo > 0 ? ` (Capo ${capo})` : ''}
+            Key: {getTransposedKey(session.result?.key, transpose - capo - (tuning === 'half_down' ? -1 : 0)) || '--'}{capo > 0 ? ` (Capo ${capo})` : ''}
           </span>
           <span className="px-3 py-1.5 bg-[var(--gf-surface-2)] rounded-lg text-[11px] font-black text-[var(--gf-amber)] border border-[var(--gf-border)]">
             ♩ {session.result?.bpm ? Math.round(session.result.bpm) : '--'} BPM

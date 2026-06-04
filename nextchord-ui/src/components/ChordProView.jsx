@@ -81,13 +81,34 @@ function parseChordPro(text) {
         const hasLyrics = segments.some(s => s.lyrics && s.lyrics.trim());
         
         if (hasLyrics) {
-            result.push({ type: 'chord-lyric', segments, rawLineIdx });
+            // Group segments by `|` to form measures
+            const measures = [];
+            let currentMeasure = [];
+            for (const seg of segments) {
+                if (seg.chord === '|') {
+                    if (currentMeasure.length > 0) measures.push(currentMeasure);
+                    currentMeasure = [seg];
+                } else {
+                    currentMeasure.push(seg);
+                }
+            }
+            if (currentMeasure.length > 0) measures.push(currentMeasure);
+            result.push({ type: 'chord-lyric', measures, rawLineIdx });
         } else {
-            const chords = segments
-                .filter(s => s.chord)
-                .map(s => s.chord);
-            if (chords.length > 0) {
-                result.push({ type: 'chord-only', chords, rawLineIdx });
+            // For chord-only lines, we can also group by `|`
+            const measures = [];
+            let currentMeasure = [];
+            for (const seg of segments) {
+                if (seg.chord === '|') {
+                    if (currentMeasure.length > 0) measures.push(currentMeasure);
+                    currentMeasure = [seg.chord];
+                } else if (seg.chord) {
+                    currentMeasure.push(seg.chord);
+                }
+            }
+            if (currentMeasure.length > 0) measures.push(currentMeasure);
+            if (measures.length > 0 && measures.some(m => m.length > 0)) {
+                result.push({ type: 'chord-only', measures, rawLineIdx });
             }
         }
     }
@@ -151,6 +172,7 @@ export function ChordProView({
     artist = '',
     lineTimings = null,
     onChordproChange = null,
+    tuning = 'standard',
 }) {
     const containerRef = useRef(null);
     const activeLineRef = useRef(null);
@@ -505,13 +527,7 @@ export function ChordProView({
                             case 'subtitle':
                                 return null;
                             case 'section':
-                                return (
-                                    <div key={i} className="cp-section">
-                                        <span className="cp-section-label">
-                                            🎸 {line.text}
-                                        </span>
-                                    </div>
-                                );
+                                return null;
                             case 'chord-only':
                                 return (
                                     <div 
@@ -521,16 +537,23 @@ export function ChordProView({
                                         onClick={() => onSeek && lineTimings?.[currentTimingIdx] && 
                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                     >
-                                        <div className="cp-chord-row">
-                                            {line.chords.map((c, ci) => {
-                                                const transposed = transposeChord(c, transpose);
-                                                return (
-                                                    <span key={ci} className="cp-chord" translate="no">
-                                                        <span className="cp-chord-name">{transposed}</span>
-                                                        {showDiagrams && <GuitarChord chordName={transposed} />}
-                                                    </span>
-                                                );
-                                            })}
+                                        <div className="cp-chord-row" style={{ display: 'flex', width: '100%' }}>
+                                            {(line.measures || []).map((measureChords, mi) => (
+                                                <div key={mi} className="cp-measure">
+                                                    {measureChords.map((c, ci) => {
+                                                        if (c === '|') return null;
+                                                        const transposed = transposeChord(c, transpose);
+                                                        return (
+                                                            <span key={ci} className="cp-chord" translate="no">
+                                                                <span className="cp-chord-name">{transposed}</span>
+                                                                <div className={`cp-diagram-wrapper ${showDiagrams ? 'inline-mode' : 'hover-mode'}`}>
+                                                                    <GuitarChord chordName={transposed} tuning={tuning} />
+                                                                </div>
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ))}
                                         </div>
                                     </div>
                                 );
@@ -543,32 +566,47 @@ export function ChordProView({
                                         onClick={() => !splitMode && onSeek && lineTimings?.[currentTimingIdx] && 
                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                     >
-                                        {line.segments.map((seg, si) => (
-                                            <React.Fragment key={si}>
-                                                <span className="cp-segment">
-                                                    {seg.chord && (
-                                                        <span className="cp-chord" translate="no">
-                                                            <span className="cp-chord-name">{transposeChord(seg.chord, transpose)}</span>
-                                                            {showDiagrams && <GuitarChord chordName={transposeChord(seg.chord, transpose)} />}
-                                                        </span>
-                                                    )}
-                                                    <span className="cp-lyrics">{seg.lyrics}</span>
-                                                </span>
-                                                {/* 分割ボタン: 最後のセグメント以外、分割モード時のみ */}
-                                                {splitMode && si < line.segments.length - 1 && (
-                                                    <button
-                                                        className="cp-split-btn"
-                                                        onClick={e => {
-                                                            e.stopPropagation();
-                                                            handleSplitLine(line, si);
-                                                        }}
-                                                        title={`ここで改行（${seg.chord || ''}→${line.segments[si+1]?.chord || ''}）`}
-                                                    >
-                                                        ✂
-                                                    </button>
-                                                )}
-                                            </React.Fragment>
-                                        ))}
+                                        <div style={{ display: 'flex', width: '100%' }}>
+                                            {(line.measures || []).map((measure, mi) => (
+                                                <div key={mi} className="cp-measure">
+                                                    {measure.map((seg, si) => {
+                                                        const isBarLine = seg.chord === '|';
+                                                        if (isBarLine && !seg.lyrics) return null;
+                                                        
+                                                        return (
+                                                            <React.Fragment key={si}>
+                                                                <span className="cp-segment">
+                                                                    {seg.chord && !isBarLine ? (
+                                                                        <span className="cp-chord" translate="no">
+                                                                            <span className="cp-chord-name">{transposeChord(seg.chord, transpose)}</span>
+                                                                            <div className={`cp-diagram-wrapper ${showDiagrams ? 'inline-mode' : 'hover-mode'}`}>
+                                                                                <GuitarChord chordName={transposeChord(seg.chord, transpose)} tuning={tuning} />
+                                                                            </div>
+                                                                        </span>
+                                                                    ) : (
+                                                                        <span className="cp-chord cp-chord-placeholder" style={{ visibility: 'hidden' }}>{"\u00A0"}</span>
+                                                                    )}
+                                                                    <span className="cp-lyrics">{seg.lyrics}</span>
+                                                                </span>
+                                                                {/* 分割ボタン */}
+                                                                {splitMode && !isBarLine && (
+                                                                    <button
+                                                                        className="cp-split-btn"
+                                                                        onClick={e => {
+                                                                            e.stopPropagation();
+                                                                            // Note: Split line logic might need updates for measures
+                                                                        }}
+                                                                        title={`ここで改行`}
+                                                                    >
+                                                                        ✂
+                                                                    </button>
+                                                                )}
+                                                            </React.Fragment>
+                                                        );
+                                                    })}
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 );
                             case 'empty':

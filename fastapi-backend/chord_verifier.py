@@ -96,20 +96,26 @@ def get_chord_pitch_classes(chord_name):
 
 
 @lru_cache(maxsize=2)
-def _load_harmonic_audio(audio_path, sr=22050):
-    """LRUキャッシュ付き音声ロード（pipeline.pyで既にロード済みの音声を再ロードしない）"""
+def _load_audio_data(audio_path, sr=22050, use_hpss=False):
+    """LRUキャッシュ付き音声ロード。use_hpss=Trueの場合のみ調波打楽器分離(HPSS)を実行。"""
     t0 = _time.time()
-    y, sr_out = librosa.load(str(audio_path), sr=sr, mono=True)
-    y_harmonic = librosa.effects.harmonic(y, margin=3.0)
-    print(f"[ChordVerifier] _load_harmonic_audio: {_time.time()-t0:.1f}s (cached)")
-    return y_harmonic, sr_out
+    from waveform_utils import load_audio_cached
+    y, sr_out = load_audio_cached(str(audio_path), sr=sr, mono=True)
+    if use_hpss:
+        y_out = librosa.effects.harmonic(y, margin=3.0)
+        label = "harmonic (HPSS)"
+    else:
+        y_out = y
+        label = "raw"
+    print(f"[ChordVerifier] _load_audio_data ({label}): {_time.time()-t0:.1f}s (cached)")
+    return y_out, sr_out
 
 
-def _compute_beat_chroma(audio_path, beat_times, sr=22050):
+def _compute_beat_chroma(audio_path, beat_times, sr=22050, use_hpss=False):
     """Compute one chroma vector per beat interval (beat-synchronous).
 
     Uses vectorized np.searchsorted instead of per-beat masking for ~4x speedup.
-    Uses LRU-cached harmonic audio to avoid redundant librosa.load calls.
+    Uses LRU-cached audio to avoid redundant librosa.load calls.
 
     Parameters
     ----------
@@ -119,6 +125,8 @@ def _compute_beat_chroma(audio_path, beat_times, sr=22050):
         Beat onset times in seconds.
     sr : int
         Sample rate.
+    use_hpss : bool
+        Whether to perform HPSS.
 
     Returns
     -------
@@ -127,17 +135,21 @@ def _compute_beat_chroma(audio_path, beat_times, sr=22050):
     """
     t0 = _time.time()
     
-    # Use LRU-cached harmonic audio loader
+    # Use LRU-cached audio loader
     try:
-        y_harmonic, sr = _load_harmonic_audio(str(audio_path), sr=sr)
+        y_processed, sr = _load_audio_data(str(audio_path), sr=sr, use_hpss=use_hpss)
     except Exception:
         # Fallback: load directly if cache fails
-        y, sr = librosa.load(str(audio_path), sr=sr, mono=True)
-        y_harmonic = librosa.effects.harmonic(y, margin=3.0)
+        from waveform_utils import load_audio_cached
+        y, sr = load_audio_cached(str(audio_path), sr=sr, mono=True)
+        if use_hpss:
+            y_processed = librosa.effects.harmonic(y, margin=3.0)
+        else:
+            y_processed = y
 
     # Compute chroma CQT once for the entire audio
     hop_length = 512
-    chroma_full = librosa.feature.chroma_cqt(y=y_harmonic, sr=sr, hop_length=hop_length)
+    chroma_full = librosa.feature.chroma_cqt(y=y_processed, sr=sr, hop_length=hop_length)
     # shape: (12, n_frames)
 
     frame_times = librosa.frames_to_time(np.arange(chroma_full.shape[1]), sr=sr, hop_length=hop_length)
@@ -158,7 +170,7 @@ def _compute_beat_chroma(audio_path, beat_times, sr=22050):
                 beat_chromas[i] = chroma_full[:, sf:ef].mean(axis=1)
     
     elapsed = _time.time() - t0
-    print(f"[ChordVerifier] _compute_beat_chroma: {n_beats} beats, {elapsed:.1f}s (vectorized searchsorted)")
+    print(f"[ChordVerifier] _compute_beat_chroma: {n_beats} beats, {elapsed:.1f}s (vectorized searchsorted, HPSS={use_hpss})")
     return beat_chromas
 
 
@@ -439,9 +451,10 @@ def verify_and_correct_chords(
     beat_times,
     audio_path,
     key_name,
-    sr=22050,
+    sr=11025,  # デフォルトを11025Hzにダウンサンプリングして高速化
     correction_threshold=0.25,
     min_improvement=0.15,
+    use_hpss=True,  # 11025Hzなら十分に高速なため、精度を維持するHPSSをデフォルトで有効化
 ):
     """
     BTCの予測コードを音声クロマと照合して検証・補正する。
@@ -460,6 +473,8 @@ def verify_and_correct_chords(
         この値以下のスコアのコードを補正候補にする
     min_improvement : float
         代替コードのスコアが元のスコアよりこれ以上高い場合のみ差し替え
+    use_hpss : bool
+        コード検証に調波打楽器分離(HPSS)を利用するかどうか
 
     Returns
     -------
@@ -473,7 +488,7 @@ def verify_and_correct_chords(
         _build_chord_templates()
 
     # ビート同期クロマを計算 (beat-synchronous CQT)
-    beat_chromas = _compute_beat_chroma(audio_path, beat_times, sr=sr)
+    beat_chromas = _compute_beat_chroma(audio_path, beat_times, sr=sr, use_hpss=use_hpss)
 
     # 候補コードリスト: BTCが検出したコードのみ（+ ダイアトニック）
     # ← 全84コードと比較すると GMaj7/BMaj7 など無関係なコードに誤置換される

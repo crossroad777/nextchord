@@ -12,6 +12,8 @@ import { ResultHeader } from "./components/ResultHeader";
 import { SetlistView } from "./components/SetlistView";
 import { useNextChord, STATUS, getApiBase } from "./hooks/useNextChord";
 
+const getTuningOffset = (tuning) => tuning === 'half_down' ? -1 : 0;
+
 export default function NextChordApp() {
   const app = useNextChord();
   const [showSettings, setShowSettings] = useState(false);
@@ -142,10 +144,11 @@ export default function NextChordApp() {
                 chordproText={app.session.result.chordpro_text}
                 currentTime={app.currentTime}
                 onSeek={app.handleSeek}
-                transpose={app.transpose - app.capo}
+                transpose={app.transpose - app.capo - getTuningOffset(app.tuning)}
                 title={app.session.fileName}
                 artist={app.session.artist}
                 lineTimings={chordproLineTimings}
+                tuning={app.tuning}
               />
             ) : (
               <div className="overflow-y-auto py-10 px-8 h-full">
@@ -160,7 +163,7 @@ export default function NextChordApp() {
                     onChordEdit={app.handleChordEditByTime} 
                     onLyricEdit={app.handleLyricEdit} 
                     onChordHover={setHoveredChord} 
-                    transpose={app.transpose - app.capo} 
+                    transpose={app.transpose - app.capo - getTuningOffset(app.tuning)} 
                     title={app.session.fileName} 
                     artist={app.session.artist} 
                   />
@@ -172,8 +175,9 @@ export default function NextChordApp() {
             <div className="nc-instrument-panel">
               <InstrumentPanel
                 currentChord={hoveredChord ?? app.currentChord}
-                transpose={app.transpose - app.capo}
+                transpose={app.transpose - app.capo - getTuningOffset(app.tuning)}
                 instrument={app.instrument}
+                tuning={app.tuning}
               />
             </div>
           )}

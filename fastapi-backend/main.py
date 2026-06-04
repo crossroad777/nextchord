@@ -22,6 +22,16 @@ from pydantic import BaseModel
 from contextlib import asynccontextmanager
 import os
 import sys
+if sys.platform == 'win32':
+    import asyncio.proactor_events
+    _original_call_connection_lost = asyncio.proactor_events._ProactorBasePipeTransport._call_connection_lost
+    def _patched_call_connection_lost(self, exc):
+        try:
+            _original_call_connection_lost(self, exc)
+        except ConnectionResetError:
+            pass
+    asyncio.proactor_events._ProactorBasePipeTransport._call_connection_lost = _patched_call_connection_lost
+
 import uuid
 import json
 import shutil
@@ -38,6 +48,10 @@ import numpy as np
 # NumPy 2.0+ patch for madmom
 if not hasattr(np, 'int'): np.int = int
 if not hasattr(np, 'float'): np.float = float
+
+import asyncio
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 if not hasattr(np, 'complex'): np.complex = complex
 if not hasattr(np, 'bool'): np.bool = bool
 
@@ -206,11 +220,13 @@ async def lifespan(app: FastAPI):
         else:
             print("WARNING: madmom not available. Skipping beat/chord/key models.")
         
-        # Load whisper model (GPU自動検出)
+        # Load whisper model (GPU自動検出 + 環境変数対応)
         import torch
+        import os
         device = "cuda" if torch.cuda.is_available() else "cpu"
         print(f"[FIRE] PyTorch device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device == "cuda" else ""))
-        whisper_size = "medium" if device == "cuda" else "small"
+        # 日本語認識精度維持のためデフォルトは "medium"。環境変数で変更可能。
+        whisper_size = os.getenv("WHISPER_MODEL_SIZE", "medium")
         
         if _use_faster_whisper:
             compute_type = "float16" if device == "cuda" else "int8"
@@ -962,6 +978,9 @@ async def get_result(session_id: str):
     chordpro_line_timings = result.get("chordpro_line_timings", [])
     if structured_data:
         try:
+            import importlib
+            import chordpro_converter
+            importlib.reload(chordpro_converter)
             from chordpro_converter import structured_to_chordpro
             chordpro_text, chordpro_line_timings = structured_to_chordpro(
                 structured_data,

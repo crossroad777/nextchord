@@ -2177,11 +2177,12 @@ button:active:not(:disabled),
 
 /* ─── Lines ─── */
 .cp-line {
-  padding: 4px 8px;
-  margin: 2px -8px;
+  padding: 12px 8px 16px;
+  margin: 4px -8px 8px;
   border-radius: var(--nc-radius-sm);
   cursor: pointer;
   transition: background 0.15s ease;
+  border-bottom: 1px dashed var(--nc-text-ghost);
 }
 
 .cp-line:hover {
@@ -2218,16 +2219,38 @@ button:active:not(:disabled),
   display: block;
 }
 
+/* ─── Measure (group of segments) ─── */
+.cp-measure {
+  display: inline-grid;
+  grid-template-rows: auto auto;
+  grid-auto-columns: auto;
+  grid-auto-flow: column;
+  column-gap: 2px;
+  min-width: 0;
+  border-left: 1px solid rgba(255, 255, 255, 0.15);
+  padding-left: 0.6em;
+  padding-right: 1.0em;
+  margin-bottom: 0.5em;
+}
+
+.cp-chord-only .cp-measure {
+  column-gap: 16px;
+}
+
+[data-theme="light"] .cp-measure {
+  border-left-color: rgba(0, 0, 0, 0.15);
+}
+
 /* ─── Segment (chord above lyrics) ─── */
 .cp-segment {
-  display: inline-flex;
-  flex-direction: column;
-  vertical-align: top;
-  min-width: 1.5em;
+  display: contents;
 }
 
 /* ─── Chord Text & Diagram ─── */
 .cp-chord {
+  grid-row: 1;
+  justify-self: start;
+  align-self: end;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2239,9 +2262,33 @@ button:active:not(:disabled),
   white-space: nowrap;
   padding-right: 4px;
   text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+  position: relative;
 }
 .cp-chord-name {
   margin-bottom: 2px;
+}
+
+/* Diagram wrapper */
+.cp-diagram-wrapper.inline-mode {
+  display: block;
+}
+.cp-diagram-wrapper.hover-mode {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-md);
+  padding: 6px;
+  box-shadow: var(--nc-shadow-lg);
+  z-index: 50;
+  margin-bottom: 4px;
+}
+.cp-chord:hover .cp-diagram-wrapper.hover-mode {
+  display: block;
+  animation: ncFadeIn 0.15s ease-out forwards;
 }
 
 .cp-hide-chords .cp-chord {
@@ -2255,6 +2302,9 @@ button:active:not(:disabled),
 
 /* ─── Lyrics Text ─── */
 .cp-lyrics {
+  grid-row: 2;
+  justify-self: start;
+  align-self: start;
   display: block;
   color: var(--nc-text);
   line-height: 1.5;

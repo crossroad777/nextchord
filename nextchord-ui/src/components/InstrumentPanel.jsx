@@ -98,50 +98,145 @@ const CHORD_SHAPES = {
     "Eaug": { name: "Eaug", frets: [0, 3, 2, 1, 1, 0] },
 };
 
+// ─── Custom Tuning Chord Databases ───
+const DADGAD_CHORD_SHAPES = {
+    // Major
+    "C": { name: "C", frets: [-1, 3, 2, 0, 3, 2] },
+    "D": { name: "D", frets: [0, 0, 0, 2, 0, 0] },
+    "E": { name: "E", frets: [2, 2, 2, 1, 2, 2] },
+    "F": { name: "F", frets: [3, 3, 3, 2, 0, 3] },
+    "G": { name: "G", frets: [5, -1, 0, 0, 2, 0] },
+    "A": { name: "A", frets: [-1, 0, 2, 2, 4, 2] },
+    "B": { name: "B", frets: [-1, 2, 4, 4, 6, 4] },
+    
+    // Minor
+    "Cm": { name: "Cm", frets: [-1, 3, 1, 0, 3, 1] },
+    "Dm": { name: "Dm", frets: [0, 0, 0, 1, 0, 0] },
+    "Em": { name: "Em", frets: [2, 2, 2, 0, 2, 2] },
+    "Fm": { name: "Fm", frets: [3, 3, 3, 1, 3, 3] },
+    "Gm": { name: "Gm", frets: [5, 5, 5, 3, 5, 5] },
+    "Am": { name: "Am", frets: [-1, 0, 2, 2, 3, 2] },
+    "Bm": { name: "Bm", frets: [-1, 2, 4, 4, 5, 4] },
+    
+    // 7th
+    "C7": { name: "C7", frets: [-1, 3, 2, 3, 1, 2] },
+    "D7": { name: "D7", frets: [0, 0, 0, 2, 3, 0] },
+    "E7": { name: "E7", frets: [2, 2, 0, 1, 2, 0] },
+    "F7": { name: "F7", frets: [3, 3, 1, 2, 3, 1] },
+    "G7": { name: "G7", frets: [5, 5, 3, 4, 5, 3] },
+    "A7": { name: "A7", frets: [-1, 0, 2, 0, 0, 2] },
+    "B7": { name: "B7", frets: [-1, 2, 1, 2, 0, 1] },
+
+    // Maj7 / Min7
+    "Cmaj7": { name: "Cmaj7", frets: [-1, 3, 2, 0, 2, 2] },
+    "Dmaj7": { name: "Dmaj7", frets: [0, 0, 0, 2, 4, 0] },
+    "Fmaj7": { name: "Fmaj7", frets: [3, 3, 2, 2, 0, 0] },
+    "Gmaj7": { name: "Gmaj7", frets: [5, 5, 4, 4, 0, 0] },
+    "Amaj7": { name: "Amaj7", frets: [-1, 0, 2, 1, 0, 2] },
+    "Am7": { name: "Am7", frets: [-1, 0, 2, 0, 3, 2] },
+    "Bm7": { name: "Bm7", frets: [-1, 2, 0, 2, 0, 0] },
+    "Cm7": { name: "Cm7", frets: [-1, 3, 1, 3, 1, 1] },
+    "Dm7": { name: "Dm7", frets: [0, 0, 0, 2, 1, 0] },
+    "Em7": { name: "Em7", frets: [2, 2, 0, 0, 2, 0] },
+};
+
+const OPENG_CHORD_SHAPES = {
+    "G": { name: "G", frets: [0, 0, 0, 0, 0, 0] },
+    "A": { name: "A", frets: [-1, 2, 2, 2, 2, 2], barre: 2 },
+    "B": { name: "B", frets: [-1, 4, 4, 4, 4, 4], barre: 4 },
+    "C": { name: "C", frets: [-1, 5, 5, 5, 5, 5], barre: 5 },
+    "D": { name: "D", frets: [-1, 7, 7, 7, 7, 7], barre: 7 },
+    "E": { name: "E", frets: [-1, 9, 9, 9, 9, 9], barre: 9 },
+    "F": { name: "F", frets: [-1, 3, 3, 3, 3, 3], barre: 3 },
+    "Em": { name: "Em", frets: [2, 0, 2, 0, 0, 2] },
+    "Am": { name: "Am", frets: [-1, 2, 2, 2, 1, 2] },
+    "Bm": { name: "Bm", frets: [-1, 4, 4, 4, 3, 4] },
+};
+
+const OPEND_CHORD_SHAPES = {
+    "D": { name: "D", frets: [0, 0, 0, 0, 0, 0] },
+    "E": { name: "E", frets: [2, 2, 2, 2, 2, 2], barre: 2 },
+    "F": { name: "F", frets: [3, 3, 3, 3, 3, 3], barre: 3 },
+    "F#": { name: "F#", frets: [4, 4, 4, 4, 4, 4], barre: 4 },
+    "G": { name: "G", frets: [5, 5, 5, 5, 5, 5], barre: 5 },
+    "A": { name: "A", frets: [7, 7, 7, 7, 7, 7], barre: 7 },
+    "B": { name: "B", frets: [9, 9, 9, 9, 9, 9], barre: 9 },
+    "C": { name: "C", frets: [10, 10, 10, 10, 10, 10], barre: 10 },
+    "Em": { name: "Em", frets: [2, 2, 2, 1, 2, 2] },
+    "F#m": { name: "F#m", frets: [4, 4, 4, 3, 4, 4] },
+    "Gm": { name: "Gm", frets: [5, 5, 5, 4, 5, 5] },
+    "Am": { name: "Am", frets: [7, 7, 7, 6, 7, 7] },
+    "Bm": { name: "Bm", frets: [9, 9, 9, 8, 9, 9] },
+    "C#m": { name: "C#m", frets: [11, 11, 11, 10, 11, 11] },
+};
+
 // ─── Chord lookup with smart fallback ───
-function findChordShape(chordName) {
+function findChordShape(chordName, tuning = "standard") {
     if (!chordName || chordName === "N.C.") return null;
 
-    // Direct match
-    if (CHORD_SHAPES[chordName]) return CHORD_SHAPES[chordName];
+    let shape = null;
+    const tuningDb = tuning === "dadgad" ? DADGAD_CHORD_SHAPES : 
+                     tuning === "open_g" ? OPENG_CHORD_SHAPES : 
+                     tuning === "open_d" ? OPEND_CHORD_SHAPES : null;
 
-    // Enharmonic equivalents
-    const enharmonic = {
-        "C#": "Db", "Db": "C#", "D#": "Eb", "Eb": "D#",
-        "F#": "Gb", "Gb": "F#", "G#": "Ab", "Ab": "G#",
-        "A#": "Bb", "Bb": "A#",
+    // Helper for direct lookup and fallbacks in a specific database
+    const lookupInDb = (db) => {
+        if (db[chordName]) return db[chordName];
+
+        const enharmonic = {
+            "C#": "Db", "Db": "C#", "D#": "Eb", "Eb": "D#",
+            "F#": "Gb", "Gb": "F#", "G#": "Ab", "Ab": "G#",
+            "A#": "Bb", "Bb": "A#",
+        };
+
+        const match = chordName.match(/^([A-G][#b]?)(.*)$/);
+        if (!match) return null;
+        const [, root, quality] = match;
+
+        const altRoot = enharmonic[root];
+        if (altRoot && db[altRoot + quality]) {
+            return db[altRoot + quality];
+        }
+
+        const fallbacks = [
+            quality.replace("add9", ""),
+            quality.replace("sus4", ""),
+            quality.replace("sus2", ""),
+            quality.replace("dim7", "dim"),
+            quality.replace("aug7", "aug"),
+            quality.replace("maj7", ""),
+            quality.replace(/m7/, "m"),
+            quality.replace(/7/, ""),
+            quality.replace(/m/, ""),
+        ];
+
+        for (const fb of fallbacks) {
+            if (db[root + fb]) return db[root + fb];
+            if (altRoot && db[altRoot + fb]) return db[altRoot + fb];
+        }
+        return null;
     };
 
-    // Extract root and quality
-    const match = chordName.match(/^([A-G][#b]?)(.*)$/);
-    if (!match) return null;
-    const [, root, quality] = match;
-
-    // Try enharmonic equivalent
-    const altRoot = enharmonic[root];
-    if (altRoot && CHORD_SHAPES[altRoot + quality]) {
-        return CHORD_SHAPES[altRoot + quality];
+    // 1. Try to find in tuning-specific database first
+    if (tuningDb) {
+        shape = lookupInDb(tuningDb);
     }
 
-    // Fallback: strip modifiers progressively
-    const fallbacks = [
-        quality.replace("add9", ""),     // Cadd9 → C
-        quality.replace("sus4", ""),     // Csus4 → C
-        quality.replace("sus2", ""),     // Csus2 → C
-        quality.replace("dim7", "dim"),  // Cdim7 → Cdim
-        quality.replace("aug7", "aug"),  // Caug7 → Caug
-        quality.replace("maj7", ""),     // Cmaj7 fallback → C
-        quality.replace(/m7/, "m"),      // Cm7 → Cm
-        quality.replace(/7/, ""),        // C7 → C
-        quality.replace(/m/, ""),        // Cm → C (root only)
-    ];
-
-    for (const fb of fallbacks) {
-        if (CHORD_SHAPES[root + fb]) return CHORD_SHAPES[root + fb];
-        if (altRoot && CHORD_SHAPES[altRoot + fb]) return CHORD_SHAPES[altRoot + fb];
+    // 2. Fallback to standard database if not found
+    if (!shape) {
+        shape = lookupInDb(CHORD_SHAPES);
     }
 
-    return null;
+    // 3. Drop D specific dynamic adaptation for standard shapes
+    if (tuning === "drop_d" && shape) {
+        const fretsCopy = [...shape.frets];
+        if (fretsCopy[0] >= 0) {
+            fretsCopy[0] += 2;
+            shape = { ...shape, frets: fretsCopy };
+        }
+    }
+
+    return shape;
 }
 
 // ─── Piano Chord Note Generator ───
@@ -383,7 +478,7 @@ const GuitarDiagram = ({ shape, startFret, showNut }) => {
 };
 
 // ─── Main InstrumentPanel ───
-export const InstrumentPanel = ({ currentChord, transpose = 0, instrument = "guitar" }) => {
+export const InstrumentPanel = ({ currentChord, transpose = 0, instrument = "guitar", tuning = "standard" }) => {
     // Apply transposition
     const transposed = transposeChord(currentChord, transpose);
 
@@ -417,7 +512,7 @@ export const InstrumentPanel = ({ currentChord, transpose = 0, instrument = "gui
     }
 
     // ─── Guitar Diagram ───
-    const shape = findChordShape(cleanChord);
+    const shape = findChordShape(cleanChord, tuning);
 
     if (!shape) {
         return (

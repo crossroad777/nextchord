@@ -847,7 +847,15 @@ export function useNextChord() {
       if (!res.ok) throw new Error('Retune failed');
       // AlphaTabリロード
       setScoreVersion(prev => prev + 1);
-      showToast(`🎸 リチューンしました (${body.tuning}, capo ${body.capo})`);
+      const tuningLabels = {
+        standard: 'レギュラー',
+        half_down: '半音下げ',
+        drop_d: 'ドロップD',
+        open_g: 'オープンG',
+        open_d: 'オープンD',
+        dadgad: 'DADGAD'
+      };
+      showToast(`🎸 リチューンしました (${tuningLabels[body.tuning] || body.tuning}, capo ${body.capo})`);
     } catch (e) {
       console.error('Retune error:', e);
       showToast('❌ リチューンに失敗しました', 'error');

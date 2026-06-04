@@ -57,3 +57,7 @@ tmp_*/
 frontend-dist/
 .pytest_cache/
 
+# Local Dev/Scratch
+scratch/
+debug_out.txt
+
