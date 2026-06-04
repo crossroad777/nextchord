@@ -576,37 +576,124 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             print(f"[{session_id}] [WHISPER] model type: {type(whisper_model).__name__}, _is_faster={_is_faster}", flush=True)
             perf_log.append(f"[DEBUG] Whisper model: {type(whisper_model).__name__}, _is_faster={_is_faster}")
             
+            def _transcribe_via_groq(wav_path, api_key, sid):
+                """Groq API (whisper-large-v3) を使用して音声の文字起こしを取得する (verbose_json 互換形式)"""
+                import requests
+                import os
+                import time as _time
+                
+                t0 = _time.time()
+                url = "https://api.groq.com/openai/v1/audio/transcriptions"
+                headers = {
+                    "Authorization": f"Bearer {api_key}"
+                }
+                
+                try:
+                    with open(wav_path, "rb") as f:
+                        files = {
+                            "file": (os.path.basename(wav_path), f, "audio/wav")
+                        }
+                        data = {
+                            "model": "whisper-large-v3",
+                            "language": "ja",
+                            "response_format": "verbose_json",
+                            "temperature": "0.0"
+                        }
+                        print(f"[{sid}] [WHISPER-GROQ] Sending request to Groq API (large-v3)...", flush=True)
+                        response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+                        
+                    if response.status_code != 200:
+                        print(f"[{sid}] [WHISPER-GROQ] Error {response.status_code}: {response.text}", flush=True)
+                        raise Exception(f"Groq API error {response.status_code}: {response.text}")
+                        
+                    res_data = response.json()
+                    
+                    # faster-whisper互換のオブジェクトへ変換
+                    class PseudoSegment:
+                        def __init__(self, s_dict):
+                            self.id = s_dict.get("id", 0)
+                            self.start = s_dict.get("start", 0.0)
+                            self.end = s_dict.get("end", 0.0)
+                            self.text = s_dict.get("text", "")
+                            self.words = None
+                            if "words" in s_dict:
+                                class PseudoWord:
+                                    def __init__(self, w_dict):
+                                        self.start = w_dict.get("start", 0.0)
+                                        self.end = w_dict.get("end", 0.0)
+                                        self.word = w_dict.get("word", "")
+                                self.words = [PseudoWord(w) for w in s_dict["words"]]
+                                
+                    segments = [PseudoSegment(s) for s in res_data.get("segments", [])]
+                    
+                    class PseudoInfo:
+                        def __init__(self, d):
+                            self.language = d.get("language", "ja")
+                            self.language_probability = 1.0
+                            self.duration = d.get("duration", 0.0)
+                            
+                    info = PseudoInfo(res_data)
+                    print(f"[{sid}] [WHISPER-GROQ] Complete in {_time.time()-t0:.2f}s, segments={len(segments)}")
+                    return segments, info
+                    
+                except Exception as e:
+                    print(f"[{sid}] [WHISPER-GROQ] Request failed: {e}")
+                    raise e
+
             def _whisper_with_lock(model, wav, sid):
-                """GPU排他ロック付きWhisper実行（faster-whisper / openai-whisper 両対応）"""
+                """GPU排他ロック付きWhisper実行（Groq API優先 / 失敗時はローカルフォールバック）"""
                 debug_path = session_dir / "whisper_debug.txt"
                 def _dbg(msg):
                     print(f"[{sid}] [WHISPER] {msg}", flush=True)
                     with open(debug_path, "a", encoding="utf-8") as f:
                         f.write(f"{msg}\n")
                 
+                nonlocal _is_faster
                 _dbg(f"_is_faster={_is_faster}, model_type={type(model).__name__}")
-                _dbg(f"Waiting for GPU lock...")
-                with _gpu_lock:
-                    print(f"[{sid}] [WHISPER] GPU lock acquired, starting transcription...", flush=True)
-                    if _is_faster:
-                        # faster-whisper API
-                        try:
-                            print(f"[{sid}] [WHISPER] faster-whisper transcribe starting...", flush=True)
-                            # CPU環境での処理速度極限化のためのチューニング
-                            # beam_sizeを5->1へ下げることでCPU負荷を数分の一にし、
-                            # vad_filterをTrueにすることで無音区間のスキャンをスキップして高速化
-                            segments_iter, info = model.transcribe(
-                                str(wav),
-                                language="ja",
-                                word_timestamps=True,
-                                condition_on_previous_text=False,
-                                no_speech_threshold=0.3,
-                                vad_filter=True, # 無音区間をフィルタリングして高速化
-                                beam_size=1,     # Greedy searchでCPUでの推論を爆速化
-                                temperature=0.0,
-                            )
-                            print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
-                            perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
+                
+                # --- Groq API 連携 ---
+                import os
+                groq_key = os.getenv("GROQ_API_KEY")
+                use_groq = False
+                if groq_key and len(groq_key.strip()) > 0:
+                    try:
+                        print(f"[{sid}] [WHISPER] Using Groq API for ultra-fast transcription (large-v3)...", flush=True)
+                        segments_iter, info = _transcribe_via_groq(str(wav), groq_key.strip(), sid)
+                        _is_faster = True
+                        use_groq = True
+                    except Exception as e:
+                        print(f"[{sid}] [WHISPER] Groq API failed: {e}. Falling back to local Whisper...", flush=True)
+                
+                # --- ローカルフォールバック ---
+                if not use_groq:
+                    _dbg(f"Waiting for GPU lock...")
+                    with _gpu_lock:
+                        print(f"[{sid}] [WHISPER] GPU lock acquired, starting transcription...", flush=True)
+                        if _is_faster:
+                            # faster-whisper API
+                            try:
+                                print(f"[{sid}] [WHISPER] faster-whisper transcribe starting...", flush=True)
+                                # CPU環境での処理速度極限化のためのチューニング
+                                # beam_sizeを5->1へ下げることでCPU負荷を数分の一にし、
+                                # vad_filterをTrueにすることで無音区間のスキャンをスキップして高速化
+                                segments_iter, info = model.transcribe(
+                                    str(wav),
+                                    language="ja",
+                                    word_timestamps=True,
+                                    condition_on_previous_text=False,
+                                    no_speech_threshold=0.3,
+                                    vad_filter=True, # 無音区間をフィルタリングして高速化
+                                    beam_size=1,     # Greedy searchでCPUでの推論を爆速化
+                                    temperature=0.0,
+                                )
+                            except Exception as e:
+                                raise e
+                        else:
+                            # openai-whisper API
+                            raise Exception("openai-whisper is not supported as fallback")
+                
+                print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
+                perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
                             # openai-whisper互換形式に変換
                             segments = []
                             all_text = []
