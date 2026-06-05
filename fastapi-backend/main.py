@@ -650,6 +650,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
         # yt-dlp コマンド
         cmd = [
             YT_DLP_PATH,
+            "--verbose",
             "--no-playlist",
             "--no-warnings", # Suppress benign runtime warnings
             "--no-check-certificates",
@@ -676,6 +677,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             try:
                 fmt_cmd = [
                     YT_DLP_PATH,
+                    "--verbose",
                     "--no-playlist",
                     "--no-check-certificates",
                     "--legacy-server-connect",
