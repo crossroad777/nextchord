@@ -473,6 +473,9 @@ class ResultResponse(BaseModel):
     bar_positions: Optional[list] = None
     beats_per_bar: Optional[int] = None
     chordpro_line_timings: Optional[list] = None
+    tab_source: Optional[str] = None
+    song_type: Optional[str] = None
+
 
 class YouTubeRequest(BaseModel):
     url: str
@@ -1044,8 +1047,22 @@ async def get_result(session_id: str):
         raise HTTPException(status_code=202, detail="まだ解析中です")
     
     # run_pipelineで計算済みのデータを取得
+    session_dir = Path(session["session_dir"])
     result = session.get("result", {})
     structured_data = result.get("structured_data", [])
+    
+    tab_source = "chord_strum"
+    song_type = "band"
+    notes_path = session_dir / "notes.json"
+    if notes_path.exists():
+        try:
+            import json
+            raw = json.loads(notes_path.read_text(encoding="utf-8"))
+            tab_source = raw.get("tab_source", "chord_strum")
+            song_type = raw.get("song_type", "band")
+        except Exception:
+            pass
+
     
     # 万が一データが空の場合のみ、最低限のフォールバック (通常は通らない)
     if not structured_data:
@@ -1106,7 +1123,10 @@ async def get_result(session_id: str):
         downbeats=result.get("downbeats"),
         bar_positions=result.get("bar_positions"),
         beats_per_bar=result.get("beats_per_bar"),
+        tab_source=tab_source,
+        song_type=song_type,
     )
+
 
 @app.patch("/result/{session_id}/chords")
 async def update_chords(session_id: str, request: Request):
@@ -1509,18 +1529,27 @@ async def export_midi(session_id: str):
     key = session.get("key", None)
     
     # ノートデータを読み込み（存在すれば第2トラックに追加）
-    notes_data = None
+    note_events = []
+    tab_source = "chord_strum"
     notes_path = session_dir / "notes.json"
     if notes_path.exists():
         try:
             import json
             raw = json.loads(notes_path.read_text(encoding="utf-8"))
-            # notes.json は {"notes": [...], "song_type": ...} 形式
-            notes_data = raw.get("notes", raw) if isinstance(raw, dict) else raw
+            note_events = raw.get("notes", [])
+            tab_source = raw.get("tab_source", "chord_strum")
         except Exception:
             pass
-    
-    create_midi(data, midi_path, bpm=bpm, key=key, notes_data=notes_data)
+            
+    midi_notes = None
+    if tab_source == "detected_notes":
+        midi_notes = note_events
+    else:
+        if generate_chord_strum_notes:
+            midi_notes = generate_chord_strum_notes(data, bpm=bpm)
+            
+    create_midi(data, midi_path, bpm=bpm, key=key, notes_data=midi_notes)
+
     
     fname = session.get("filename", session_id)
     fname_stem = Path(fname).stem if fname else session_id
@@ -1602,12 +1631,11 @@ async def export_gp5(session_id: str):
     bpm = session.get("bpm", 120.0)
     title = session.get("filename", session_id)
 
-    # TABソースノートを決定（ソロギター->検出ノート、バンド->コードストラム）
-    song_type = notes_data.get("song_type", "band")
     tab_source = notes_data.get("tab_source", "chord_strum")
-
-    if song_type == "solo_guitar" or tab_source == "detected_notes":
+    if tab_source == "detected_notes":
         gp5_notes = note_events
+
+
     else:
         # コードストラムノート用にstart/end/pitch/string/fret形式に変換
         sd_path = session_dir / "structured_data.json"
@@ -1678,6 +1706,8 @@ class RetuneRequest(BaseModel):
     tuning: str = "standard"
     capo: int = 0
     noise_gate: float = 0.2
+    tab_source: Optional[str] = None
+
 
 
 @app.post("/result/{session_id}/retune")
@@ -1709,7 +1739,8 @@ async def retune(session_id: str, request: RetuneRequest):
         notes_data = json.load(f)
     note_events = notes_data.get("notes", [])
     song_type = notes_data.get("song_type", "band")
-    tab_source = notes_data.get("tab_source", "chord_strum")
+    tab_source = request.tab_source if request.tab_source is not None else notes_data.get("tab_source", "chord_strum")
+    notes_data["tab_source"] = tab_source
 
     # beats.json 読み込み
     beats_json_path = session_dir / "beats.json"
@@ -1749,7 +1780,8 @@ async def retune(session_id: str, request: RetuneRequest):
                 lyrics_data.append((bar, beat, start, end, text))
 
     # TABソースノート決定
-    is_solo = (song_type == "solo_guitar" or tab_source == "detected_notes")
+    is_solo = (tab_source == "detected_notes")
+
     if is_solo:
         xml_notes = note_events
     else:
@@ -1870,7 +1902,7 @@ async def cut_noise(session_id: str, request: CutRequest):
     title = session.get("filename", session_id)
 
     # GP5用ノート決定
-    is_solo = (song_type == "solo_guitar" or tab_source == "detected_notes")
+    is_solo = (tab_source == "detected_notes")
     if is_solo:
         gp5_notes = note_events
     else:

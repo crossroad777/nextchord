@@ -1803,7 +1803,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             json.dump({
                 "notes": note_events,
                 "song_type": song_type,
-                "tab_source": "detected_notes" if is_solo_guitar else "chord_strum",
+                "tab_source": "chord_strum",
+
                 "tab_source_count": len(tab_source_notes),
             }, f, indent=2)
 

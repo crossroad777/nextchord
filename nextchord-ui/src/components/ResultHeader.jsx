@@ -110,7 +110,10 @@ export function ResultHeader({
   // Ribbon: Tuning
   tuning,
   setTuning,
+  tabSource,
+  handleTabSourceChange,
   // Ribbon: Technique
+
   showTechniques,
   setShowTechniques,
   // Direct DOM refs for smooth 60fps progress
@@ -223,6 +226,23 @@ export function ResultHeader({
           </select>
           <span className="nc-ribbon-label">チューニング</span>
         </div>
+
+        {/* Tab Source Dropdown */}
+        {session?.hasNotes && (
+          <div className="nc-ribbon-item">
+            <select
+              value={tabSource || 'chord_strum'}
+              onChange={(e) => handleTabSourceChange(e.target.value)}
+              className="text-[11px] font-black text-[var(--gf-text)] bg-[var(--gf-surface-2)] border border-[var(--gf-border)] rounded-lg px-2 py-1 mb-1 cursor-pointer focus:outline-none focus:border-[var(--gf-amber)] appearance-none"
+              style={{ minWidth: '100px' }}
+            >
+              <option value="chord_strum">コード伴奏</option>
+              <option value="detected_notes">単音・メロディ</option>
+            </select>
+            <span className="nc-ribbon-label">譜面タイプ</span>
+          </div>
+        )}
+
 
         {/* Capo */}
         <div className="nc-ribbon-item">

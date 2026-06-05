@@ -134,8 +134,12 @@ export default function NextChordApp() {
             handleExportGP5={app.handleExportGP5}
             tuning={app.tuning}
             setTuning={app.setTuning}
+
+            tabSource={app.tabSource}
+            handleTabSourceChange={app.handleTabSourceChange}
             showTechniques={app.showTechniques}
             setShowTechniques={app.setShowTechniques}
+
             timelineProgressRef={app.timelineProgressRef}
             timelineHandleRef={app.timelineHandleRef}
           />

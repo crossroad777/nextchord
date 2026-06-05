@@ -110,28 +110,58 @@ def create_midi(structured_data, output_path, bpm=120, key=None, notes_data=None
     channel = 0
     volume = 80
     
-    # ビート間隔をBPMから計算（1ビート = 1拍）
-    prev_chord = None
-    current_beat = 0
+    # We will first scan structured_data and group consecutive identical chords to play sustained chords
+    segments = []
+    current_segment = None
+    current_beat = 0.0
     
     for item in structured_data:
         chord = item.get("chord")
-        duration = item.get("duration", 0.5)
-        beat_duration = duration * bpm / 60.0  # 秒 -> ビート数に変換
+        time_sec = item.get("time", None)
+        dur_sec = item.get("duration", 0.5)
         
-        if chord and chord not in ("N", "N.C."):
+        dur_beat = dur_sec * bpm / 60.0
+        if time_sec is not None:
+            start_beat = time_sec * bpm / 60.0
+        else:
+            start_beat = current_beat
+            
+        norm_chord = chord if (chord and chord not in ("N", "N.C.")) else None
+        
+        if current_segment is None:
+            current_segment = {
+                "chord": norm_chord,
+                "start_beat": start_beat,
+                "duration_beats": dur_beat
+            }
+        elif current_segment["chord"] == norm_chord:
+            # Expand current segment
+            end_beat = start_beat + dur_beat
+            current_segment["duration_beats"] = end_beat - current_segment["start_beat"]
+        else:
+            segments.append(current_segment)
+            current_segment = {
+                "chord": norm_chord,
+                "start_beat": start_beat,
+                "duration_beats": dur_beat
+            }
+            
+        current_beat = start_beat + dur_beat
+        
+    if current_segment is not None:
+        segments.append(current_segment)
+        
+    # Write the merged chords to MIDI
+    for seg in segments:
+        chord = seg["chord"]
+        if chord:
             root, offsets = parse_chord(chord)
             if root is not None:
-                base_note = 48 + root  # C3 (オクターブ3、より自然なギター音域)
-                
-                # コードが変わった時のみ鳴らす（連続する同じコードは不要）
-                if chord != prev_chord:
-                    for offset in offsets:
-                        note = base_note + offset
-                        midi.addNote(0, channel, note, current_beat, max(0.5, beat_duration), volume)
-                    prev_chord = chord
-        
-        current_beat += max(0.25, beat_duration)
+                base_note = 48 + root  # C3
+                for offset in offsets:
+                    note = base_note + offset
+                    midi.addNote(0, channel, note, seg["start_beat"], max(0.25, seg["duration_beats"]), volume)
+
     
     # Track 1: 検出ノート（メロディ/ギターライン）
     if notes_data:

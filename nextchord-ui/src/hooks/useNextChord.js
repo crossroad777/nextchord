@@ -42,6 +42,9 @@ export function useNextChord() {
   const [tuning, setTuning] = useState('standard');
   const [noiseGate, setNoiseGate] = useState(null);
   const [isRetuning, setIsRetuning] = useState(false);
+  const [tabSource, setTabSource] = useState("chord_strum");
+  const [songType, setSongType] = useState("band");
+
   const [history, setHistory] = useState([]);
   const [scoreVersion, setScoreVersion] = useState(0);
   const [isRegenerating, setIsRegenerating] = useState(false);
@@ -239,7 +242,10 @@ export function useNextChord() {
         audioUrl: null,  // OOM防止: 最初はnull
         hasNotes: result.has_notes
       });
+      setTabSource(result.tab_source || "chord_strum");
+      setSongType(result.song_type || "band");
       setStatus(STATUS.COMPLETED);
+
       try {
         const wRes = await fetch(`${getApiBase()}/result/${sid}/waveform`);
         const wData = await wRes.json();
@@ -370,7 +376,10 @@ export function useNextChord() {
         fileName: result.filename || prev?.fileName,
         artist: result.artist || prev?.artist
       }));
+      setTabSource(result.tab_source || "chord_strum");
+      setSongType(result.song_type || "band");
       setStatus(STATUS.COMPLETED);
+
       // 波形データ取得
       try {
         const wRes = await fetch(`${getApiBase()}/result/${sid}/waveform`);
@@ -829,7 +838,7 @@ export function useNextChord() {
   };
 
   // --- Retune API ---
-  const handleRetune = async (newTuning, newCapo, newNoiseGate) => {
+  const handleRetune = async (newTuning, newCapo, newNoiseGate, newTabSource) => {
     if (!session?.id) return;
     setIsRetuning(true);
     try {
@@ -842,6 +851,12 @@ export function useNextChord() {
       } else if (noiseGate !== null) {
         body.noise_gate = noiseGate;
       }
+      
+      const ts = newTabSource !== undefined ? newTabSource : tabSource;
+      if (ts) {
+        body.tab_source = ts;
+      }
+      
       const res = await fetch(`${getApiBase()}/result/${session.id}/retune`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -869,14 +884,20 @@ export function useNextChord() {
 
   const handleTuningChange = (newTuning) => {
     setTuning(newTuning);
-    handleRetune(newTuning, capo, noiseGate);
+    handleRetune(newTuning, capo, noiseGate, tabSource);
   };
 
   const handleCapoChange = (newCapo) => {
     setCapo(newCapo);
-    handleRetune(tuning, newCapo, noiseGate);
+    handleRetune(tuning, newCapo, noiseGate, tabSource);
     // カポ変更は曲別設定に自動保存される (useEffect経由)
   };
+
+  const handleTabSourceChange = (newTabSource) => {
+    setTabSource(newTabSource);
+    handleRetune(tuning, capo, noiseGate, newTabSource);
+  };
+
 
   const handleTranspose = (delta) => {
     const newVal = Math.max(-12, Math.min(12, transpose + delta));
@@ -1134,6 +1155,8 @@ export function useNextChord() {
     tuning, setTuning: handleTuningChange,
     isRetuning, noiseGate,
     handleCapoChange,
+    tabSource, setTabSource, songType, handleTabSourceChange,
+
     // Show toast helper
     showToast,
     // Show techniques
