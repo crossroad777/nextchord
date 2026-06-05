@@ -895,14 +895,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     print(f"[{sid}] [WHISPER] Gap re-transcription using Groq API...", flush=True)
                                     gap_segs, _ = _transcribe_via_groq(gap_wav.name, groq_key.strip(), sid)
                                 else:
-                                    # 既存modelの内部状態汚染を回避するため、小型の別インスタンスで再認識
-                                    import torch
-                                    dev = "cuda" if torch.cuda.is_available() else "cpu"
-                                    comp = "float16" if dev == "cuda" else "int8"
-                                    print(f"[{sid}] [WHISPER] Gap re-transcription using local model on {dev} ({comp})...", flush=True)
-                                    from faster_whisper import WhisperModel as _GapWM
-                                    _gap_model = _GapWM("small", device=dev, compute_type=comp)
-                                    gap_segs, gap_info = _gap_model.transcribe(
+                                    # メモリ節約とロード時間削減のため、すでにロードされている既存の model インスタンスを使い回す
+                                    print(f"[{sid}] [WHISPER] Gap re-transcription using existing model...", flush=True)
+                                    gap_segs, gap_info = model.transcribe(
                                         gap_wav.name,
                                         language="ja",
                                         word_timestamps=True,
