@@ -608,7 +608,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                 "--no-check-certificates", 
                 "--legacy-server-connect", 
                 "--impersonate", "chrome",
-                "--extractor-args", "youtube:player_client=ios,web", 
                 "--print", "%(title)s\n%(artist,uploader)s"
             ]
             if proxy:
@@ -640,7 +639,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             "--no-check-certificates",
             "--legacy-server-connect",
             "--impersonate", "chrome",
-            "--extractor-args", "youtube:player_client=ios,web",
+            "-f", "bestaudio/best",
             "-x",
             "--audio-format", "wav",
             "--audio-quality", "0",

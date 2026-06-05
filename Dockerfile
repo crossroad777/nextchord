@@ -23,6 +23,7 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     git \
     nodejs \
+    && ln -sf /usr/bin/nodejs /usr/bin/node \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
