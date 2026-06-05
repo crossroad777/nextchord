@@ -618,7 +618,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                 "--legacy-server-connect", 
                 "--impersonate", "chrome",
                 "--js-runtimes", "deno:/usr/bin/deno",
-                "--extractor-args", "youtube:player-client=android,ios,mweb,tv",
                 "--print", "%(title)s\n%(artist,uploader)s"
             ]
             if proxy:
@@ -652,7 +651,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             "--legacy-server-connect",
             "--impersonate", "chrome",
             "--js-runtimes", "deno:/usr/bin/deno",
-            "--extractor-args", "youtube:player-client=android,ios,mweb,tv",
             "-f", "bestaudio/best",
             "-x",
             "--audio-format", "wav",
@@ -679,7 +677,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                     "--legacy-server-connect",
                     "--impersonate", "chrome",
                     "--js-runtimes", "deno:/usr/bin/deno",
-                    "--extractor-args", "youtube:player-client=android,ios,mweb,tv",
                     "-F"
                 ]
                 if proxy:
