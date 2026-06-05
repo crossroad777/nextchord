@@ -2223,7 +2223,7 @@ button:active:not(:disabled),
 .cp-measure {
   display: inline-grid;
   grid-template-rows: auto auto;
-  grid-auto-columns: auto;
+  grid-auto-columns: max-content;
   grid-auto-flow: column;
   column-gap: 2px;
   min-width: 0;
