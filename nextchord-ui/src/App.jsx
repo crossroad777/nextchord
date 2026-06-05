@@ -426,7 +426,17 @@ export default function NextChordApp() {
               </p>
             </div>
             <div className="mb-6">
-              <label className="block text-sm font-bold text-[var(--nc-text-muted)] mb-2">YouTube クッキー (Netscape形式のテキスト)</label>
+              <div className="flex justify-between items-center mb-2">
+                <label className="block text-sm font-bold text-[var(--nc-text-muted)]">YouTube クッキー (Netscape形式)</label>
+                <a 
+                  href="/cookie_guide.html" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="text-xs text-[var(--nc-primary)] hover:underline flex items-center gap-1"
+                >
+                  設定手順ガイド ↗
+                </a>
+              </div>
               <textarea 
                 value={tempYtCookies} 
                 onChange={(e) => setTempYtCookies(e.target.value)} 
@@ -435,7 +445,7 @@ export default function NextChordApp() {
                 spellCheck={false}
               />
               <p className="text-xs text-[var(--nc-text-ghost)] mt-1.5 leading-relaxed">
-                YouTubeでボット検出エラーになる場合、ブラウザ拡張（例: Get cookies.txt）等でクッキーを書き出し、貼り付けてください。
+                YouTubeでボット検出エラーになる場合、ブラウザ拡張等でクッキーを書き出し、貼り付けてください。シークレットウィンドウ経由での取得を推奨します。
               </p>
             </div>
             <div className="flex justify-end gap-2">

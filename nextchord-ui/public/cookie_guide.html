@@ -1,0 +1,640 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NextChord YouTube クッキー設定ガイド</title>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Outfit:wght@400;600;700;800;900&family=Noto+Sans+JP:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  
+  <style>
+    :root {
+      --nc-bg: #09090b;
+      --nc-surface: #111113;
+      --nc-surface-2: #18181b;
+      --nc-surface-3: #27272a;
+      --nc-border: rgba(255, 255, 255, 0.06);
+      --nc-border-hover: rgba(255, 255, 255, 0.12);
+      --nc-primary: #6366f1;
+      --nc-primary-hover: #4f46e5;
+      --nc-primary-soft: rgba(99, 102, 241, 0.10);
+      --nc-secondary: #8b5cf6;
+      --nc-accent: #06b6d4;
+      --nc-text: #f4f4f5;
+      --nc-text-secondary: #a1a1aa;
+      --nc-text-muted: #71717a;
+      
+      --nc-success: #22c55e;
+      --nc-success-soft: rgba(34, 197, 94, 0.1);
+      --nc-error: #ef4444;
+      --nc-error-soft: rgba(239, 68, 68, 0.1);
+      --nc-warning: #f59e0b;
+      --nc-warning-soft: rgba(245, 158, 11, 0.1);
+      
+      --nc-gradient-brand: linear-gradient(135deg, #6366f1, #8b5cf6);
+      --nc-shadow-glow: 0 0 30px rgba(99, 102, 241, 0.15);
+      --nc-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.5);
+    }
+
+    [data-theme="light"] {
+      --nc-bg: #f8f9fc;
+      --nc-surface: #ffffff;
+      --nc-surface-2: #f1f3f9;
+      --nc-surface-3: #e4e7ef;
+      --nc-border: rgba(0, 0, 0, 0.08);
+      --nc-border-hover: rgba(0, 0, 0, 0.14);
+      --nc-primary: #4f46e5;
+      --nc-primary-hover: #4338ca;
+      --nc-primary-soft: rgba(79, 70, 229, 0.08);
+      --nc-secondary: #7c3aed;
+      --nc-accent: #0891b2;
+      --nc-text: #1e1e2e;
+      --nc-text-secondary: #555770;
+      --nc-text-muted: #8e8ea0;
+      
+      --nc-success-soft: rgba(34, 197, 94, 0.08);
+      --nc-error-soft: rgba(239, 68, 68, 0.08);
+      --nc-warning-soft: rgba(245, 158, 11, 0.08);
+      
+      --nc-gradient-brand: linear-gradient(135deg, #4f46e5, #7c3aed);
+      --nc-shadow-glow: 0 0 30px rgba(79, 70, 229, 0.06);
+      --nc-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.06);
+    }
+
+    * {
+      box-sizing: border-box;
+      transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    }
+
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--nc-bg);
+      color: var(--nc-text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      letter-spacing: -0.01em;
+    }
+
+    /* Layout */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 40px 24px 80px 24px;
+    }
+
+    /* Header Styling */
+    header {
+      margin-bottom: 48px;
+      text-align: center;
+      position: relative;
+    }
+
+    .logo {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      font-family: 'Outfit', sans-serif;
+      font-size: 1.5rem;
+      font-weight: 900;
+      color: var(--nc-text);
+      text-decoration: none;
+      margin-bottom: 16px;
+    }
+
+    .logo-icon {
+      background: var(--nc-gradient-brand);
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: var(--nc-shadow-glow);
+    }
+
+    h1 {
+      font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+      font-size: 2.5rem;
+      font-weight: 850;
+      letter-spacing: -0.03em;
+      margin: 0 0 12px 0;
+      line-height: 1.25;
+      background: var(--nc-gradient-brand);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .subtitle {
+      color: var(--nc-text-secondary);
+      font-size: 1.1rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* Sections */
+    section {
+      background-color: var(--nc-surface);
+      border: 1px solid var(--nc-border);
+      border-radius: 24px;
+      padding: 36px;
+      margin-bottom: 32px;
+      box-shadow: var(--nc-shadow-lg);
+    }
+
+    section:hover {
+      border-color: var(--nc-border-hover);
+    }
+
+    h2 {
+      font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+      font-size: 1.6rem;
+      font-weight: 750;
+      margin-top: 0;
+      margin-bottom: 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      border-bottom: 1px solid var(--nc-border);
+      padding-bottom: 12px;
+    }
+
+    h3 {
+      font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-top: 24px;
+      margin-bottom: 12px;
+      color: var(--nc-text);
+    }
+
+    /* Alert / Callout boxes */
+    .alert {
+      padding: 16px 20px;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      border: 1px solid transparent;
+      display: flex;
+      gap: 16px;
+    }
+
+    .alert-icon {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      margin-top: 2px;
+    }
+
+    .alert-content {
+      font-size: 0.95rem;
+    }
+
+    .alert-content p {
+      margin: 0 0 8px 0;
+    }
+    .alert-content p:last-child {
+      margin-bottom: 0;
+    }
+
+    .alert-important {
+      background-color: var(--nc-primary-soft);
+      border-color: rgba(99, 102, 241, 0.2);
+      color: var(--nc-text);
+    }
+    .alert-important .alert-icon {
+      color: var(--nc-primary);
+    }
+
+    .alert-caution {
+      background-color: var(--nc-warning-soft);
+      border-color: rgba(245, 158, 11, 0.2);
+      color: var(--nc-text);
+    }
+    .alert-caution .alert-icon {
+      color: var(--nc-warning);
+    }
+
+    .alert-danger {
+      background-color: var(--nc-error-soft);
+      border-color: rgba(239, 68, 68, 0.2);
+      color: var(--nc-text);
+    }
+    .alert-danger .alert-icon {
+      color: var(--nc-error);
+    }
+
+    /* Steps */
+    .steps-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    .step-item {
+      position: relative;
+      padding-left: 56px;
+      margin-bottom: 32px;
+    }
+
+    .step-item:last-child {
+      margin-bottom: 0;
+    }
+
+    .step-number {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 36px;
+      height: 36px;
+      background: var(--nc-surface-2);
+      border: 1px solid var(--nc-border);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-family: 'Outfit', sans-serif;
+      color: var(--nc-primary);
+      box-shadow: var(--nc-shadow-glow);
+    }
+
+    .step-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .step-body {
+      color: var(--nc-text-secondary);
+      font-size: 0.95rem;
+    }
+
+    /* Extensions grid */
+    .extensions-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+
+    .extension-card {
+      background-color: var(--nc-surface-2);
+      border: 1px solid var(--nc-border);
+      border-radius: 16px;
+      padding: 20px;
+      text-decoration: none;
+      color: var(--nc-text);
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      transition: all 0.2s ease;
+    }
+
+    .extension-card:hover {
+      border-color: var(--nc-primary);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 20px rgba(99, 102, 241, 0.08);
+    }
+
+    .ext-name {
+      font-weight: 700;
+      margin-bottom: 8px;
+      color: var(--nc-text);
+    }
+
+    .ext-desc {
+      font-size: 0.85rem;
+      color: var(--nc-text-secondary);
+      margin-bottom: 16px;
+      flex-grow: 1;
+    }
+
+    .ext-link {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--nc-primary);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .ext-link svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    /* Q&A Accordion */
+    .qa-item {
+      background-color: var(--nc-surface-2);
+      border: 1px solid var(--nc-border);
+      border-radius: 16px;
+      margin-bottom: 16px;
+      overflow: hidden;
+    }
+
+    .qa-question {
+      padding: 20px;
+      font-weight: 700;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      user-select: none;
+    }
+
+    .qa-question:hover {
+      background-color: var(--nc-surface-3);
+    }
+
+    .qa-answer {
+      padding: 0 20px 20px 20px;
+      color: var(--nc-text-secondary);
+      font-size: 0.95rem;
+      border-top: 1px solid var(--nc-border);
+      display: none;
+      animation: slideDown 0.25s ease-out;
+    }
+
+    .qa-item.active .qa-answer {
+      display: block;
+    }
+
+    .qa-toggle-icon {
+      transition: transform 0.2s ease;
+    }
+
+    .qa-item.active .qa-toggle-icon {
+      transform: rotate(185deg);
+    }
+
+    /* Utilities */
+    code {
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      background-color: var(--nc-surface-2);
+      padding: 3px 6px;
+      border-radius: 6px;
+      font-size: 0.85em;
+      border: 1px solid var(--nc-border);
+      color: var(--nc-primary);
+    }
+
+    .highlight-box {
+      background-color: var(--nc-surface-2);
+      border-left: 4px solid var(--nc-primary);
+      padding: 16px 20px;
+      border-radius: 0 16px 16px 0;
+      margin: 16px 0;
+      font-size: 0.95rem;
+    }
+
+    /* Animations */
+    @keyframes slideDown {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      color: var(--nc-text-muted);
+      font-size: 0.85rem;
+      margin-top: 48px;
+      border-top: 1px solid var(--nc-border);
+      padding-top: 24px;
+    }
+
+    /* SVG Custom Icons */
+    .icon {
+      display: inline-block;
+      width: 1em;
+      height: 1em;
+      stroke-width: 0;
+      stroke: currentColor;
+      fill: currentColor;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="logo">
+        <div class="logo-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-music"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+        </div>
+        <span>NextChord</span>
+      </div>
+      <h1>YouTube ダウンロード設定ガイド</h1>
+      <div class="subtitle">ロボット検出エラーを回避し、安全にYouTube音源を解析するためのクッキー設定手順</div>
+    </header>
+
+    <!-- Section 1: Security -->
+    <section>
+      <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--nc-accent)"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        🔒 セキュリティとプライバシーについて
+      </h2>
+      
+      <div class="alert alert-important">
+        <div class="alert-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" x2="12" y1="16" y2="12"/><line x1="12" x2="12.01" y1="8" y2="8"/></svg>
+        </div>
+        <div class="alert-content">
+          <p><strong>ローカル保存のみで安全：</strong></p>
+          <p>入力されたクッキー情報は、サーバー側には一切保存されません。<strong>お客様のブラウザ内（LocalStorage）にのみ安全に保存</strong>され、解析リクエストを行う瞬間のみ一時的にYouTubeへのアクセス認証に使用されます。</p>
+          <p style="margin-top: 8px;"><strong>サブアカウントでの利用を推奨：</strong></p>
+          <p>安全のため、メインのGoogleアカウントではなく、<strong>テスト用（サブ）のGoogleアカウント</strong>でYouTubeにログインしてエクスポートすることを強くお勧めします。</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Section 2: Preparation -->
+    <section>
+      <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--nc-primary)"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.1a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+        🛠️ 事前準備：クッキー取得用ツールのインストール
+      </h2>
+      <p style="color: var(--nc-text-secondary); margin-bottom: 20px;">
+        ブラウザのクッキーを「Netscape形式」のテキストファイルとしてエクスポートするために、お使いのブラウザに合わせて以下の拡張機能（無料・オープンソース）をインストールします。
+      </p>
+
+      <div class="extensions-grid">
+        <a href="https://chromewebstore.google.com/detail/get-cookiestxt-locally/ccmkkjiedihjhhkgaeiondilbkocmneb" target="_blank" rel="noopener noreferrer" class="extension-card">
+          <div>
+            <div class="ext-name">Chrome / Edge / Brave 等</div>
+            <div class="ext-desc">「Get cookies.txt LOCALLY」を使用します。クッキーデータをローカル処理する安全なオープンソース拡張機能です。</div>
+          </div>
+          <div class="ext-link">
+            Chromeウェブストアを開く
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </div>
+        </a>
+
+        <a href="https://addons.mozilla.org/ja/firefox/addon/export-cookies-txt/" target="_blank" rel="noopener noreferrer" class="extension-card">
+          <div>
+            <div class="ext-name">Firefox</div>
+            <div class="ext-desc">「Export Cookies.txt」を使用します。1クリックでNetscape形式のクッキーを簡単にエクスポートできます。</div>
+          </div>
+          <div class="ext-link">
+            Firefox Add-onsを開く
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+          </div>
+        </a>
+      </div>
+    </section>
+
+    <!-- Section 3: Step-by-Step -->
+    <section>
+      <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--nc-secondary)"><path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/><line x1="4" x2="4" y1="22" y2="15"/></svg>
+        📝 クッキーのエクスポート手順
+      </h2>
+
+      <div class="alert alert-caution">
+        <div class="alert-icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+        </div>
+        <div class="alert-content">
+          <p><strong>⚠️ 最重要：クッキーがすぐに切れてしまうのを防ぐには</strong></p>
+          <p>クッキーを書き出した後に、同じブラウザでYouTubeを操作（クリックやリロードなど）すると、YouTubeのセキュリティによりセッションキーが自動更新され、エクスポートしたクッキーが<strong>即座に無効化</strong>されます。</p>
+          <p>この現象を防ぐため、以下の<strong>「シークレットウィンドウを使った手順」</strong>を正確に行ってください。</p>
+        </div>
+      </div>
+
+      <ul class="steps-list" style="margin-top: 36px;">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-title">シークレット ウィンドウを新しく開く</div>
+          <div class="step-body">
+            ブラウザのメニューから **シークレット ウィンドウ**（シークレットモード / プライベートブラウズ）を新しく開きます。<br>
+            <span style="font-size: 0.85em; color: var(--nc-text-muted);">※インストールした拡張機能がシークレットモードでも動作するように、ブラウザの設定で拡張機能の「シークレットモードでの実行を許可」をあらかじめオンに設定しておいてください。</span>
+          </div>
+        </li>
+
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-title">YouTubeにログインする</div>
+          <div class="step-body">
+            シークレットウィンドウで <a href="https://www.youtube.com" target="_blank" rel="noopener noreferrer" style="color: var(--nc-primary);">YouTube</a> にアクセスし、ログインします。（※サブアカウントでのログインを推奨）。
+          </div>
+        </li>
+
+        <li class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-title">クッキーをエクスポートする</div>
+          <div class="step-body">
+            ログイン後、YouTubeのトップページが表示された状態のまま（他のリンクをクリックしたり動画を再生したりせずに）、インストールした拡張機能をクリックします。<br>
+            表示されたテキスト領域の内容を<strong>すべて選択してコピー（Ctrl + A & Ctrl + C）</strong>します。<br>
+            <span style="font-size: 0.85em; color: var(--nc-text-muted);">※テキストは <code># Netscape HTTP Cookie File</code> で始まるフォーマットです。</span>
+          </div>
+        </li>
+
+        <li class="step-item">
+          <div class="step-number">4</div>
+          <div class="step-title">シークレットウィンドウを「即座に」閉じる</div>
+          <div class="step-body">
+            コピーが完了したら、<strong>すぐにそのシークレットウィンドウ（タブ）を完全に閉じます</strong>。他の操作を行わないことで、コピーしたクッキーの有効期限を保護します。
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Section 4: Configuration -->
+    <section>
+      <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--nc-success)"><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></svg>
+        ⚙️ NextChordへの設定手順
+      </h2>
+      
+      <ul class="steps-list">
+        <li class="step-item">
+          <div class="step-number">1</div>
+          <div class="step-title">設定を開く</div>
+          <div class="step-body">
+            NextChordの画面右上にある **設定アイコン（歯車マーク ⚙️）** をクリックします。
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">2</div>
+          <div class="step-title">クッキーを貼り付ける</div>
+          <div class="step-body">
+            「サーバー設定」モーダルが表示されます。「YouTube クッキー」のテキストエリアに、ステップ3でコピーしたテキストを貼り付けます。
+          </div>
+        </li>
+        <li class="step-item">
+          <div class="step-number">3</div>
+          <div class="step-title">保存して適用する</div>
+          <div class="step-body">
+            右下の「保存して適用」ボタンをクリックします。これで設定が保存され、次回以降のYouTube解析でこのクッキーが使用されます。
+          </div>
+        </li>
+      </ul>
+    </section>
+
+    <!-- Section 5: Q&A -->
+    <section>
+      <h2>
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--nc-warning)"><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" x2="12.01" y1="17" y2="17"/><circle cx="12" cy="12" r="10"/></svg>
+        ❓ トラブルシューティング（Q&A）
+      </h2>
+
+      <div class="qa-item">
+        <div class="qa-question">
+          <span>Q. 「Sign in to confirm you're not a bot」エラーが表示される</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="qa-toggle-icon"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="qa-answer">
+          登録したクッキーの期限が切れているか、エクスポート後にYouTubeを開いたため無効化されています。新しいシークレットウィンドウを開き、手順に沿って新しいクッキーをエクスポートし、NextChordに再度設定してください。
+        </div>
+      </div>
+
+      <div class="qa-item">
+        <div class="qa-question">
+          <span>Q. シークレットウィンドウでクッキー拡張機能がクリックできない</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="qa-toggle-icon"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="qa-answer">
+          ブラウザの設定により、シークレットモードでの拡張機能の利用が制限されています。ブラウザの設定ページ（例：Chromeの場合は <code>chrome://extensions</code>）を開き、対象の拡張機能の「詳細」をクリックし、<strong>「シークレットモードでの実行を許可」</strong>をオンにしてください。
+        </div>
+      </div>
+
+      <div class="qa-item">
+        <div class="qa-question">
+          <span>Q. クッキーを設定したのにダウンロードできない動画がある</span>
+          <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="qa-toggle-icon"><path d="m6 9 6 6 6-6"/></svg>
+        </div>
+        <div class="qa-answer">
+          メンバー限定動画、年齢制限動画、または一部の非公開動画は、ログインしたアカウント自身がYouTube上でその動画を再生できる権限を持っていない場合、ダウンロードできません。対象の動画を再生できるアカウントでログインした上でクッキーをエクスポートしてください。
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      NextChord AI Chord Detection & TAB Generator &copy; 2026
+    </footer>
+  </div>
+
+  <script>
+    // Accordion Toggle Script
+    document.querySelectorAll('.qa-question').forEach(item => {
+      item.addEventListener('click', () => {
+        const parent = item.parentElement;
+        parent.classList.toggle('active');
+      });
+    });
+
+    // Theme integration (loads settings from parent app dynamically)
+    try {
+      const theme = localStorage.getItem('nextchord-theme') || 'dark';
+      document.documentElement.setAttribute('data-theme', theme);
+    } catch (e) {
+      console.error('Theme initialization failed', e);
+    }
+  </script>
+</body>
+</html>
