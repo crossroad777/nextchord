@@ -656,6 +656,24 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
         
         if result.returncode != 0:
             print(f"yt-dlp error: {result.stderr}")
+            try:
+                fmt_cmd = [
+                    YT_DLP_PATH,
+                    "--no-playlist",
+                    "--no-check-certificates",
+                    "--legacy-server-connect",
+                    "--impersonate", "chrome",
+                    "-F"
+                ]
+                if proxy:
+                    fmt_cmd.extend(["--proxy", proxy])
+                if cookies_file:
+                    fmt_cmd.extend(["--cookies", cookies_file])
+                fmt_cmd.append(url)
+                fmt_result = subprocess.run(fmt_cmd, capture_output=True, text=True, timeout=15)
+                print(f"[YouTube Debug] Available formats:\n{fmt_result.stdout}\n[YouTube Debug] Formats stderr:\n{fmt_result.stderr}")
+            except Exception as fe:
+                print(f"[YouTube Debug] Failed to get format list: {fe}")
             raise Exception(f"YouTube download failed: {result.stderr}")
         
         # Windowsでファイルロックが発生する場合があるため、待機
