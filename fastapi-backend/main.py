@@ -623,7 +623,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                 "--no-check-certificates", 
                 "--legacy-server-connect", 
                 "--impersonate", "chrome",
-                "--remote-components", "ejs:github",
                 "--js-runtimes", "node",
                 "--print", "%(title)s\n%(artist,uploader)s"
             ]
@@ -656,7 +655,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             "--no-check-certificates",
             "--legacy-server-connect",
             "--impersonate", "chrome",
-            "--remote-components", "ejs:github",
             "--js-runtimes", "node",
             "-f", "bestaudio/best",
             "-x",
@@ -682,7 +680,6 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                     "--no-check-certificates",
                     "--legacy-server-connect",
                     "--impersonate", "chrome",
-                    "--remote-components", "ejs:github",
                     "--js-runtimes", "node",
                     "-F"
                 ]

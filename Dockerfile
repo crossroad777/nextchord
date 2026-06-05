@@ -37,7 +37,7 @@ RUN pip install --no-cache-dir openai-whisper faster-whisper
 RUN pip install --no-cache-dir demucs
 RUN pip install --no-cache-dir onnxruntime
 RUN pip install --no-cache-dir --no-deps basic-pitch
-RUN pip install --no-cache-dir -U https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz
+RUN pip install --no-cache-dir "yt-dlp[default] @ https://github.com/yt-dlp/yt-dlp/archive/master.tar.gz"
 RUN pip install --no-cache-dir curl_cffi
 RUN pip install --no-cache-dir PyGuitarPro mutagen
 RUN pip install --no-cache-dir setuptools
