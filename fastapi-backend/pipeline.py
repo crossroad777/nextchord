@@ -716,17 +716,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 _dbg(f"_is_faster={_is_faster}, model_type={type(model).__name__}")
                 
                 # --- Groq API 連携 ---
-                import os
-                groq_key = os.getenv("GROQ_API_KEY")
+                # 歌声の文字起こしにおいては、VADフィルターが動作しない Groq API (large-v3) は
+                # 伴奏部や無音部で深刻なハルシネーションおよびタイムスタンプ逆戻りを起こすため、
+                # 精度とアライメントの整合性を優先してローカルの faster-whisper を強制使用します。
                 use_groq = False
-                if groq_key and len(groq_key.strip()) > 0:
-                    try:
-                        print(f"[{sid}] [WHISPER] Using Groq API for ultra-fast transcription (large-v3)...", flush=True)
-                        segments_iter, info = _transcribe_via_groq(str(wav), groq_key.strip(), sid)
-                        _is_faster = True
-                        use_groq = True
-                    except Exception as e:
-                        print(f"[{sid}] [WHISPER] Groq API failed: {e}. Falling back to local Whisper...", flush=True)
                 
                 # --- ローカルフォールバック ---
                 if not use_groq:
@@ -745,8 +738,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 word_timestamps=True,
                                 condition_on_previous_text=False,
                                 no_speech_threshold=0.3,
-                                vad_filter=True, # 無音区間をフィルタリングして高速化
-                                beam_size=1,     # Greedy searchでCPUでの推論を爆速化
+                                vad_filter=False, # 音楽のボーカル検出漏れを防ぐためVADは無効化
+                                beam_size=5,     # 精度向上のためビームサイズを5に戻す
                                 temperature=0.0,
                             )
                         else:

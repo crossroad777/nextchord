@@ -185,12 +185,11 @@ if FFMPEG_BIN_DIR and FFMPEG_BIN_DIR not in os.environ["PATH"]:
 PYTHON_PATH = os.getenv("PYTHON_PATH", "python")
 
 # yt-dlp パス
-YT_DLP_PATH = os.getenv("YT_DLP_PATH", "yt-dlp")
-if not shutil.which(YT_DLP_PATH):
-    # venv内にあるか確認
-    venv_yt = PROJECT_ROOT / "venv312" / "Scripts" / "yt-dlp.exe"
-    if venv_yt.exists():
-        YT_DLP_PATH = str(venv_yt)
+venv_yt = PROJECT_ROOT / "venv312" / "Scripts" / "yt-dlp.exe"
+if venv_yt.exists():
+    YT_DLP_PATH = str(venv_yt)
+else:
+    YT_DLP_PATH = os.getenv("YT_DLP_PATH", "yt-dlp")
 
 print(f"Backend initializing. FFMPEG_PATH: {FFMPEG_PATH}, YT_DLP_PATH: {YT_DLP_PATH}")
 
@@ -2081,7 +2080,7 @@ if FRONTEND_DIR.exists():
             import mimetypes
             mime, _ = mimetypes.guess_type(str(file_path))
             return FileResponse(str(file_path), media_type=mime or "application/octet-stream")
-        return HTMLResponse((FRONTEND_DIR / "index.html").read_text())
+        return HTMLResponse((FRONTEND_DIR / "index.html").read_text(encoding="utf-8"))
     
     print(f"[OK] Frontend serving from: {FRONTEND_DIR}")
 else:

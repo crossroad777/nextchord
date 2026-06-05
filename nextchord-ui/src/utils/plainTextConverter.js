@@ -55,21 +55,28 @@ export function chordproToPlainText(chordproText) {
         let chordLine = '';
         let lyricLine = '';
         let lastIdx = 0;
-        let visualPos = 0;
+        let lyricVisualPos = 0; // 歌詞行の累積視覚幅
         
         for (const match of matches) {
             const chord = match[1];
             const lyricsBefore = line.substring(lastIdx, match.index);
             
             lyricLine += lyricsBefore;
-            visualPos += getVisualWidth(lyricsBefore);
+            lyricVisualPos += getVisualWidth(lyricsBefore);
             
-            // chordLine の長さを visualPos に合わせるためにスペースで埋める
-            while (chordLine.length < visualPos) {
+            // chordLine の長さを lyricVisualPos に合わせるためにスペースで埋める
+            while (chordLine.length < lyricVisualPos) {
                 chordLine += ' ';
             }
-            chordLine += chord + ' '; // コード同士がくっつかないように最低1スペース確保
-            visualPos += chord.length + 1; // 実際に確保した幅を進める
+
+            if (chord === '|') {
+                chordLine += '| ';
+                lyricLine += '| ';
+                lyricVisualPos += 2; // 歌詞行にも '| ' を追加したので 2 進める
+            } else {
+                chordLine += chord + ' '; // コード同士がくっつかないように最低1スペース確保
+                // 歌詞行には何も追加していないため、lyricVisualPos は進めない
+            }
             
             lastIdx = match.index + match[0].length;
         }
@@ -92,16 +99,20 @@ export function plainTextToChordpro(plainText) {
     // コード行かどうかの判定関数
     const isChordLine = (str) => {
         if (str.trim() === '') return false;
-        // 許可する文字: 英数字、#, b, +, -, /, (, ), 空白
-        if (!/^[A-Za-z0-9#\+\-\/\(\)\s]+$/.test(str)) return false;
+        // 許可する文字: 英数字、#, b, +, -, /, (, ), |, 空白
+        if (!/^[A-Za-z0-9#\+\-\/\(\)\|\s]+$/.test(str)) return false;
         // 大文字の A-G が少なくとも1つ含まれているか
         if (!/[A-G]/.test(str)) return false;
         
         // スペース区切りの各ブロックがA-Gで始まっているかチェック（緩めに）
         const words = str.trim().split(/\s+/);
         for (const w of words) {
+            // | をすべて除去してから判定 (| 単体のブロックや、|C などの前置・後置を許容)
+            const cleanW = w.replace(/\|/g, '');
+            if (!cleanW) continue;
+            
             // "sus4" のようにアルファベット小文字だけで構成されているものはNG（コードの構成要素とみなすならA-G始まりのはず）
-            if (!/^[A-G]/.test(w) && !/^\(/.test(w)) {
+            if (!/^[A-G]/.test(cleanW) && !/^\(/.test(cleanW)) {
                 return false;
             }
         }
@@ -123,11 +134,11 @@ export function plainTextToChordpro(plainText) {
                 const lyricLine = lines[i+1];
                 i++; // 歌詞行を消費
                 
-                // コード行からコードとその位置を抽出
-                const chordRegex = /[A-Ga-g][^\s]*/g;
+                // コード行からコードと小節線、およびその位置を抽出
+                const itemRegex = /\||[A-Ga-g][A-Za-z0-9#\+\-\/\(\)]*/g;
                 let match;
                 const chords = [];
-                while ((match = chordRegex.exec(chordLine)) !== null) {
+                while ((match = itemRegex.exec(chordLine)) !== null) {
                     chords.push({ chord: match[0], pos: match.index });
                 }
                 
@@ -146,6 +157,17 @@ export function plainTextToChordpro(plainText) {
                     }
                     
                     if (currentLyricCharIdx < lyricLine.length) {
+                        // 歌詞行の中の小節線 '|' はスキップし、視覚幅だけ進める
+                        if (lyricLine[currentLyricCharIdx] === '|') {
+                            let skipLen = 1;
+                            if (currentLyricCharIdx + 1 < lyricLine.length && lyricLine[currentLyricCharIdx + 1] === ' ') {
+                                skipLen = 2;
+                            }
+                            currentLyricVisualPos += skipLen;
+                            currentLyricCharIdx += skipLen;
+                            continue;
+                        }
+
                         const char = lyricLine[currentLyricCharIdx];
                         mergedLine += char;
                         currentLyricVisualPos += getVisualWidth(char);
@@ -161,9 +183,9 @@ export function plainTextToChordpro(plainText) {
                 }
                 result += mergedLine + '\n';
             } else {
-                // 歌詞がないコード行のみの場合（[C] [G] のように変換）
-                const chordRegex = /[A-Ga-g][^\s]*/g;
-                let merged = line.replace(chordRegex, match => `[${match}]`);
+                // 歌詞がないコード行のみの場合（[C] [G] のように変換、小節線も含む）
+                const itemRegex = /\||[A-Ga-g][A-Za-z0-9#\+\-\/\(\)]*/g;
+                let merged = line.replace(itemRegex, match => `[${match}]`);
                 merged = merged.replace(/\s+/g, ' ').trim();
                 result += merged + '\n';
             }

@@ -586,7 +586,7 @@ export function ChordProView({
                                                                     ) : (
                                                                         <span className="cp-chord cp-chord-placeholder" style={{ visibility: 'hidden' }}>{"\u00A0"}</span>
                                                                     )}
-                                                                    <span className="cp-lyrics">{seg.lyrics}</span>
+                                                                    <span className="cp-lyrics">{(!seg.lyrics || !seg.lyrics.trim()) ? "\u00A0" : seg.lyrics}</span>
                                                                 </span>
                                                                 {/* 分割ボタン */}
                                                                 {splitMode && !isBarLine && (

@@ -107,7 +107,16 @@ def notes_to_gp5(
     # Track setup
     track = song.tracks[0]
     track.name = "Guitar"
+    
+    # 明示的に MIDI チャンネルのプロパティを初期化する
     track.channel.instrument = 25  # Acoustic Guitar (steel)
+    track.channel.volume = 127
+    track.channel.balance = 64
+    track.channel.chorus = 0
+    track.channel.reverb = 0
+    track.channel.phaser = 0
+    track.channel.tremolo = 0
+
     track.strings = [
         gp.GuitarString(number=i + 1, value=tuning[5 - i])
         for i in range(6)
@@ -119,7 +128,7 @@ def notes_to_gp5(
     # --- Measure Headers ---
     mh0 = song.measureHeaders[0]
     mh0.timeSignature.numerator = beats_per_bar
-    mh0.timeSignature.denominator.value = _beat_type_to_gp_dur(beat_type)
+    mh0.timeSignature.denominator = gp.Duration(value=beat_type)
     mh0.keySignature = _fifths_to_gp_key(key_fifths)
 
     for bar_num in range(1, total_bars):
@@ -127,13 +136,13 @@ def notes_to_gp5(
         mh.number = bar_num + 1
         mh.start = mh0.start + bar_num * _bar_length(beats_per_bar, beat_type)
         mh.timeSignature.numerator = beats_per_bar
-        mh.timeSignature.denominator.value = _beat_type_to_gp_dur(beat_type)
+        mh.timeSignature.denominator = gp.Duration(value=beat_type)
         mh.keySignature = _fifths_to_gp_key(key_fifths)
         song.measureHeaders.append(mh)
 
     # --- Build Measures ---
-    measures = [track.measures[0]]
-    for bar_num in range(1, total_bars):
+    measures = []
+    for bar_num in range(total_bars):
         m = gp.Measure(track, song.measureHeaders[bar_num])
         measures.append(m)
     track.measures = measures

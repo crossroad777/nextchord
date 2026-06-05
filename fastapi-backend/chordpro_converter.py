@@ -225,8 +225,22 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
             continue
             
         _, ws, we = item
-        
+
+        # Find the sustained chord at the start of this window (ws)
+        sustained_chord = None
+        for ct, cc, _ in sorted([c for c in chord_changes if c[1] != "|"], key=lambda x: x[0]):
+            if ct <= ws + 0.05:
+                sustained_chord = cc
+            else:
+                break
+
         window_chords_raw = [(ct, cc) for ct, cc, _ in chord_changes if ws - 0.1 <= ct < we - 0.1]
+
+        if sustained_chord and sustained_chord != "N.C.":
+            # Check if there is already a regular chord at ws to avoid duplicates
+            has_start_chord = any(abs(ct - ws) < 0.1 and cc != "|" for ct, cc in window_chords_raw)
+            if not has_start_chord:
+                window_chords_raw.append((ws, sustained_chord))
         
         # Snap the first regular chord of each measure to the bar line
         snapped_chords = []

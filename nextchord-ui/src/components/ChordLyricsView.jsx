@@ -173,6 +173,18 @@ function splitPhraseWithWords(phraseText, phraseWords, phraseStart, phraseEnd, c
         }
     }
 
+    // Check for timestamp regressions (regression means abnormal matched words, e.g. duplicate match)
+    let hasTimeRegression = false;
+    for (let i = 1; i < wordTimes.length; i++) {
+        if (wordTimes[i] < wordTimes[i - 1] - 0.01) {
+            hasTimeRegression = true;
+            break;
+        }
+    }
+    if (hasTimeRegression) {
+        return splitPhraseByRatio(phraseText, phraseStart, phraseEnd, chords);
+    }
+
     // ── Build word character positions ──
     const wordPositions = [];
     let cp = 0;
