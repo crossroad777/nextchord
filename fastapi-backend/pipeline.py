@@ -625,8 +625,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             "model": "whisper-large-v3",
                             "language": "ja",
                             "response_format": "verbose_json",
-                            "temperature": "0.0"
+                            "temperature": "0.0",
+                            "prompt": "歌",
+                            "timestamp_granularities[]": ["word", "segment"]
                         }
+
                         print(f"[{sid}] [WHISPER-GROQ] Sending request to Groq API (large-v3)...", flush=True)
                         response = requests.post(url, headers=headers, files=files, data=data, timeout=30)
                         
@@ -635,6 +638,31 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         raise Exception(f"Groq API error {response.status_code}: {response.text}")
                         
                     res_data = response.json()
+                    
+                    # Map root-level words to segments if present (Groq returns 'words' at the root level)
+                    words_all = res_data.get("words", [])
+                    segments_raw = res_data.get("segments", []) or []
+                    if isinstance(segments_raw, list) and isinstance(words_all, list) and words_all:
+                        for s in segments_raw:
+                            s["words"] = []
+                        for w in words_all:
+                            w_start = w.get("start", 0.0)
+                            w_end = w.get("end", 0.0)
+                            w_mid = (w_start + w_end) / 2.0
+                            best_seg = None
+                            min_dist = float("inf")
+                            for s in segments_raw:
+                                s_start = s.get("start", 0.0)
+                                s_end = s.get("end", 0.0)
+                                if s_start <= w_mid <= s_end:
+                                    best_seg = s
+                                    break
+                                dist = min(abs(w_mid - s_start), abs(w_mid - s_end))
+                                if dist < min_dist:
+                                    min_dist = dist
+                                    best_seg = s
+                            if best_seg is not None:
+                                best_seg["words"].append(w)
                     
                     # faster-whisper互換のオブジェクトへ変換
                     class PseudoSegment:
@@ -652,7 +680,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                         self.word = w_dict.get("word", "")
                                 self.words = [PseudoWord(w) for w in s_dict["words"]]
                                 
-                    segments = [PseudoSegment(s) for s in res_data.get("segments", [])]
+                    segments = [PseudoSegment(s) for s in segments_raw]
                     
                     class PseudoInfo:
                         def __init__(self, d):
@@ -877,19 +905,28 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             gap_wav.close()
                             
                             try:
-                                # 既存modelの内部状態汚染を回避するため、小型の別インスタンスで再認識
-                                from faster_whisper import WhisperModel as _GapWM
-                                _gap_model = _GapWM("small", device="cuda", compute_type="float16")
-                                gap_segs, gap_info = _gap_model.transcribe(
-                                    gap_wav.name,
-                                    language="ja",
-                                    word_timestamps=True,
-                                    condition_on_previous_text=False,
-                                    no_speech_threshold=0.1,
-                                    vad_filter=False,
-                                    beam_size=5,
-                                    temperature=[0.0, 0.2, 0.4],
-                                )
+                                if use_groq:
+                                    print(f"[{sid}] [WHISPER] Gap re-transcription using Groq API...", flush=True)
+                                    gap_segs, _ = _transcribe_via_groq(gap_wav.name, groq_key.strip(), sid)
+                                else:
+                                    # 既存modelの内部状態汚染を回避するため、小型の別インスタンスで再認識
+                                    import torch
+                                    dev = "cuda" if torch.cuda.is_available() else "cpu"
+                                    comp = "float16" if dev == "cuda" else "int8"
+                                    print(f"[{sid}] [WHISPER] Gap re-transcription using local model on {dev} ({comp})...", flush=True)
+                                    from faster_whisper import WhisperModel as _GapWM
+                                    _gap_model = _GapWM("small", device=dev, compute_type=comp)
+                                    gap_segs, gap_info = _gap_model.transcribe(
+                                        gap_wav.name,
+                                        language="ja",
+                                        word_timestamps=True,
+                                        condition_on_previous_text=False,
+                                        no_speech_threshold=0.1,
+                                        vad_filter=False,
+                                        beam_size=5,
+                                        temperature=[0.0, 0.2, 0.4],
+                                    )
+
                                 
                                 gap_results = []
                                 gap_seg_count = 0
