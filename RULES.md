@@ -34,3 +34,11 @@
 Make this pipeline run end-to-end:
 midi -> UMR -> validate -> interpret -> render(chords, musicxml, tab stub) -> CLI output
 Even if estimators are stubs, the pipeline must execute and tests must pass.
+
+## Regression Prevention & Version Control Policy
+
+- **Commit frequently**: Every fix or feature must be committed to git immediately once verified. Do not let changes sit unstaged or uncommitted.
+- **Do not bypass local testing**: Run test scripts (like those in `scratch/`) to verify external APIs (e.g., Groq Whisper) and ensure proper return types before pushing or deploying.
+- **Document API integrations**: Always document expected structures and formats of external services (like Groq's verbose_json output) to avoid subtle structural regressions.
+- **Deploy only committed code**: When deploying to Hugging Face Spaces (e.g., `hf` or `hf2` remotes), deploy from a clean git branch. Never push raw, uncommitted code manually.
+
