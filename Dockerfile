@@ -22,6 +22,7 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     build-essential \
     git \
+    nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
