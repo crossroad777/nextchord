@@ -623,7 +623,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                 "--no-check-certificates", 
                 "--legacy-server-connect", 
                 "--impersonate", "chrome",
-                "--js-runtimes", "node",
+                "--js-runtimes", "node:/usr/bin/node",
                 "--print", "%(title)s\n%(artist,uploader)s"
             ]
             if proxy:
@@ -655,7 +655,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             "--no-check-certificates",
             "--legacy-server-connect",
             "--impersonate", "chrome",
-            "--js-runtimes", "node",
+            "--js-runtimes", "node:/usr/bin/node",
             "-f", "bestaudio/best",
             "-x",
             "--audio-format", "wav",
@@ -680,7 +680,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                     "--no-check-certificates",
                     "--legacy-server-connect",
                     "--impersonate", "chrome",
-                    "--js-runtimes", "node",
+                    "--js-runtimes", "node:/usr/bin/node",
                     "-F"
                 ]
                 if proxy:
