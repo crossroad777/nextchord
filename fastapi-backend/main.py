@@ -214,7 +214,7 @@ async def lifespan(app: FastAPI):
     import subprocess
     print("shutil.which('deno'):", shutil.which("deno"))
     try:
-        r = subprocess.run(["deno", "--version"], capture_output=True, text=True)
+        r = subprocess.run(["deno", "--version"], capture_output=True, text=True, timeout=5)
         print("deno --version stdout:", r.stdout.strip(), "stderr:", r.stderr.strip(), "code:", r.returncode)
     except Exception as e:
         print("Failed to run deno:", e)
