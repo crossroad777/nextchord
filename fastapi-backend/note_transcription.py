@@ -523,6 +523,10 @@ def _enhanced_librosa_transcribe(
     min_note_sec = minimum_note_length / 1000.0
     note_events = []
 
+    # ループ外で1回だけ計算する定数
+    max_env = np.max(onset_env_combined) + 1e-8
+    rms_global = float(np.sqrt(np.mean(y ** 2))) + 1e-8
+
     for idx, onset_t in enumerate(onset_times):
         # 次のオンセットまでがノートの最大長
         if idx + 1 < len(onset_times):
@@ -588,13 +592,13 @@ def _enhanced_librosa_transcribe(
         onset_frame = librosa.time_to_frames(onset_t, sr=sr, hop_length=hop_length)
         if onset_frame < len(onset_env_combined):
             vel_raw = onset_env_combined[onset_frame]
-            max_env = np.max(onset_env_combined) + 1e-8
+            # max_env はループ外で計算済み
             # RMS エネルギーも考慮
             rms_frame_start = max(0, int(onset_t * sr))
             rms_frame_end = min(len(y), int((onset_t + 0.05) * sr))
             if rms_frame_end > rms_frame_start:
                 rms_local = float(np.sqrt(np.mean(y[rms_frame_start:rms_frame_end] ** 2)))
-                rms_global = float(np.sqrt(np.mean(y ** 2))) + 1e-8
+                # rms_global はループ外で計算済み
                 rms_factor = min(rms_local / rms_global, 2.0)
             else:
                 rms_factor = 1.0
@@ -1000,11 +1004,21 @@ def transcribe_notes(
             _scale_key = _scale_key.replace(" major", "").strip()
         _scale = SCALE_NOTES.get(_scale_key, None)
         
-        for i, n in enumerate(notes):
+        # start_time でソートしたインデックスを作成し、時間窓で枝刈り
+        sorted_indices = sorted(range(len(notes)), key=lambda k: notes[k]["start_time"])
+        HARMONIC_TIME_WINDOW = 2.0  # 秒
+
+        for ii, i in enumerate(sorted_indices):
+            n = notes[i]
             if not keep[i]:
                 continue
-            for j, m in enumerate(notes):
-                if i == j or not keep[j]:
+            for jj in range(ii + 1, len(sorted_indices)):
+                j = sorted_indices[jj]
+                m = notes[j]
+                # 時間窓を超えたら以降のノートはさらに遠いので打ち切り
+                if m["start_time"] > n["end_time"] + HARMONIC_TIME_WINDOW:
+                    break
+                if not keep[j]:
                     continue
                 if m["start_time"] > n["end_time"] or m["end_time"] < n["start_time"]:
                     continue

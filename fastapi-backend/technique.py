@@ -104,6 +104,7 @@ def detect_techniques(
         # Solo mode: load audio + run pyin for F0-based technique detection
         try:
             from waveform_utils import load_audio_cached
+            import librosa
             audio, audio_sr = load_audio_cached(wav_path, sr=F0_SR, mono=True)
             print(f"[Technique] Audio loaded: {len(audio)/audio_sr:.1f}s @ {audio_sr}Hz")
             global_f0, voiced, _ = librosa.pyin(

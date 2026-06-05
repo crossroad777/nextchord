@@ -451,7 +451,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             
             for i, name in enumerate(note_names):
                 for qual, tmpl in templates.items():
-                    chord_templates[f"{name}:{qual}"] = np.roll(tmpl, i)
+                    rolled = np.roll(tmpl, i)
+                    chord_templates[f"{name}:{qual}"] = rolled / (np.linalg.norm(rolled) + 1e-8)
             
             # フレームごとにテンプレートマッチング
             n_frames = chroma.shape[1]
@@ -472,8 +473,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 best_score = 0.3  # 最低閾値
                 
                 for chord_name, template in chord_templates.items():
-                    template_norm = template / (np.linalg.norm(template) + 1e-8)
-                    score = np.dot(frame_norm, template_norm)
+                    score = np.dot(frame_norm, template)
                     if score > best_score:
                         best_score = score
                         best_chord = chord_name
@@ -735,23 +735,20 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         print(f"[{sid}] [WHISPER] GPU lock acquired, starting transcription...", flush=True)
                         if _is_faster:
                             # faster-whisper API
-                            try:
-                                print(f"[{sid}] [WHISPER] faster-whisper transcribe starting...", flush=True)
-                                # CPU環境での処理速度極限化のためのチューニング
-                                # beam_sizeを5->1へ下げることでCPU負荷を数分の一にし、
-                                # vad_filterをTrueにすることで無音区間のスキャンをスキップして高速化
-                                segments_iter, info = model.transcribe(
-                                    str(wav),
-                                    language="ja",
-                                    word_timestamps=True,
-                                    condition_on_previous_text=False,
-                                    no_speech_threshold=0.3,
-                                    vad_filter=True, # 無音区間をフィルタリングして高速化
-                                    beam_size=1,     # Greedy searchでCPUでの推論を爆速化
-                                    temperature=0.0,
-                                )
-                            except Exception as e:
-                                raise e
+                            print(f"[{sid}] [WHISPER] faster-whisper transcribe starting...", flush=True)
+                            # CPU環境での処理速度極限化のためのチューニング
+                            # beam_sizeを5->1へ下げることでCPU負荷を数分の一にし、
+                            # vad_filterをTrueにすることで無音区間のスキャンをスキップして高速化
+                            segments_iter, info = model.transcribe(
+                                str(wav),
+                                language="ja",
+                                word_timestamps=True,
+                                condition_on_previous_text=False,
+                                no_speech_threshold=0.3,
+                                vad_filter=True, # 無音区間をフィルタリングして高速化
+                                beam_size=1,     # Greedy searchでCPUでの推論を爆速化
+                                temperature=0.0,
+                            )
                         else:
                             # openai-whisper API
                             pass
@@ -789,6 +786,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     # openai-whisper互換形式に変換
                     segments = []
                     all_text = []
+                    import re
+                    _hiragana_re = re.compile(r'[\u3040-\u309F]')
+                    _katakana_re = re.compile(r'[\u30A0-\u30FF]')
+                    _kanji_re = re.compile(r'[\u4E00-\u9FFF]')
+                    _punct_re = re.compile(r'^[\s\u3000・、。\-―─…♪♫\u200b]+$')
+                    _hangul_re_local = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF]')
+                    # 音楽クレジット系ハルシネーションキーワード
+                    _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏', '何',
+                                  'Movie', 'movie', 'Music', 'music', 'Video', 'video',
+                                  'Subscribe', 'subscribe', 'Sound', 'sound'}
                     for seg in segments_iter:
                         text = seg.text.strip()
                         
@@ -805,20 +812,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         
                         # ワードタイムスタンプがある場合: ワードレベルで部分的なハルシネーションを除去
                         if seg.words:
-                            import re
                             words_list = [
                                 {'start': w.start, 'end': w.end, 'word': w.word}
                                 for w in seg.words
                             ]
-                            _hiragana_re = re.compile(r'[\u3040-\u309F]')
-                            _katakana_re = re.compile(r'[\u30A0-\u30FF]')
-                            _kanji_re = re.compile(r'[\u4E00-\u9FFF]')
-                            # 音楽クレジット系ハルシネーションキーワード
-                            _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏', '何',
-                                          'Movie', 'movie', 'Music', 'music', 'Video', 'video',
-                                          'Subscribe', 'subscribe', 'Sound', 'sound'}
-                            _punct_re = re.compile(r'^[\s\u3000・、。\-―─…♪♫\u200b]+$')
-                            _hangul_re_local = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF]')
                             
                             clean_words = []
                             found_real = False
@@ -987,7 +984,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 os.unlink(gap_wav.name)
                                 # ギャップモデルのVRAM解放
                                 try:
-                                    del _gap_model
+                                    if '_gap_model' in locals():
+                                        del _gap_model
                                     import torch
                                     if torch.cuda.is_available():
                                         torch.cuda.empty_cache()

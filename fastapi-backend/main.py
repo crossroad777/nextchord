@@ -1085,9 +1085,6 @@ async def get_result(session_id: str):
     chordpro_line_timings = result.get("chordpro_line_timings", [])
     if structured_data:
         try:
-            import importlib
-            import chordpro_converter
-            importlib.reload(chordpro_converter)
             from chordpro_converter import structured_to_chordpro
             chordpro_text, chordpro_line_timings = structured_to_chordpro(
                 structured_data,

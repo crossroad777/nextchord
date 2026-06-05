@@ -26,7 +26,7 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
     if len(chord_changes) == 1: return f"[{chord_changes[0][1]}]{text}"
     if phrase_end is None or phrase_end <= phrase_start:
         times = [ct for ct, _ in chord_changes]
-        phrase_start, times[0]
+        phrase_start = times[0]
         phrase_end = times[-1] + 2.0
     phrase_duration = max(phrase_end - phrase_start, 0.01)
     
@@ -282,6 +282,6 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
             line_timings.append(window_chords[0][0])
         else:
             lines.append(combined_text)
-            line_timings.append(c_start)
+            line_timings.append(ws)
 
     return "\n".join(lines), line_timings
