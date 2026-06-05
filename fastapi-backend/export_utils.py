@@ -6,13 +6,11 @@ MIDI / PDF / テキスト形式でのコード譜エクスポート。
 
 import re
 import unicodedata
-import math
-import json
 from pathlib import Path
 from midiutil import MIDIFile
 from reportlab.pdfgen import canvas
 from reportlab.lib.pagesizes import A4
-from reportlab.lib.units import inch, mm
+from reportlab.lib.units import mm
 from reportlab.lib.colors import HexColor
 
 # ------------------------------------------------------------------
@@ -396,7 +394,7 @@ def create_text_score(chordpro_text):
             
         # Parse directives
         if line.startswith('{c:') or line.startswith('{t:') or line.startswith('{st:') or line.startswith('{key:'):
-            import re
+
             inner = re.search(r'\{(?:c|t|st|key):(.*)\}', line)
             if inner:
                 val = inner.group(1).strip()
@@ -407,7 +405,7 @@ def create_text_score(chordpro_text):
             continue
             
         # Parse chords and lyrics
-        import re
+
         parts = re.split(r'(\[[^\]]+\])', line)
         
         chord_line = ""

@@ -79,4 +79,5 @@ def load_audio_cached(audio_path, sr=22050, mono=True):
     y, sr_out = librosa.load(path_str, sr=sr, mono=mono)
     elapsed = _time.time() - t0
     print(f"[waveform_utils] load_audio_cached: Loaded {path_str} at sr={sr} in {elapsed:.2f}s (new load)")
+    y.flags.writeable = False
     return y, sr_out

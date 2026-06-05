@@ -226,21 +226,29 @@ def _remove_overlapping_notes(notes: List[Dict], max_polyphony: int = 6) -> List
 
     cleaned.sort(key=lambda n: (n["start_time"], n["midi_pitch"]))
 
-    # 同時発音数チェック（タイムスライスごと）
+    # 同時発音数チェック — アクティブノートリストで効率的に管理
     result = []
+    # アクティブノートをend_timeでソートして管理
+    active_ends = []  # (end_time, index_in_result)
     for n in cleaned:
-        concurrent = [
-            r for r in result
-            if r["start_time"] < n["end_time"] and r["end_time"] > n["start_time"]
-        ]
-        if len(concurrent) < max_polyphony:
+        # 期限切れのノートをアクティブリストから除去
+        active_ends = [(et, ri) for et, ri in active_ends if et > n["start_time"]]
+        
+        if len(active_ends) < max_polyphony:
             result.append(n)
+            active_ends.append((n["end_time"], len(result) - 1))
         else:
             # 信頼度で比較し、最低のものと入れ替え
-            min_conf = min(concurrent, key=lambda x: x["confidence"])
-            if n["confidence"] > min_conf["confidence"]:
-                result.remove(min_conf)
+            min_idx = min(range(len(active_ends)), key=lambda i: result[active_ends[i][1]]["confidence"])
+            min_conf_note = result[active_ends[min_idx][1]]
+            if n["confidence"] > min_conf_note["confidence"]:
+                # 低信頼度ノートを除去してこのノートを追加
+                result[active_ends[min_idx][1]] = None  # マーク削除
+                active_ends.pop(min_idx)
                 result.append(n)
+                active_ends.append((n["end_time"], len(result) - 1))
+    
+    result = [r for r in result if r is not None]
 
     result.sort(key=lambda n: (n["start_time"], n["midi_pitch"]))
     return result
@@ -410,23 +418,20 @@ def _band_score_filter(notes: List[Dict], key: str = "C", bpm: float = 120.0,
         notes = [n for n in notes if n.get("confidence", 0.8) >= CONFIDENCE_THRESHOLD]
         print(f"[BandScoreFilter] After confidence filter (>{CONFIDENCE_THRESHOLD}): {len(notes)} notes (removed {before - len(notes)})")
 
-    # === STEP 6: 密度制限 ===
+    # === STEP 6: 密度制限 — O(N) counter dict (was O(N²)) ===
     measure_duration = beat_duration * 4  # 4/4拍子
     if notes:
         before = len(notes)
         final_notes = []
+        measure_count = {}  # {measure_idx: count}
         if notes:
             song_start = notes[0]["start_time"]
             for n in notes:
                 measure_idx = int((n["start_time"] - song_start) / measure_duration)
-                measure_start = song_start + measure_idx * measure_duration
-                measure_end = measure_start + measure_duration
-                notes_in_measure = sum(
-                    1 for fn in final_notes
-                    if measure_start <= fn["start_time"] < measure_end
-                )
-                if notes_in_measure < MAX_NOTES_PER_MEASURE:
+                current = measure_count.get(measure_idx, 0)
+                if current < MAX_NOTES_PER_MEASURE:
                     final_notes.append(n)
+                    measure_count[measure_idx] = current + 1
         notes = final_notes
         print(f"[BandScoreFilter] After density limit ({MAX_NOTES_PER_MEASURE}/measure): {len(notes)} notes (removed {before - len(notes)})")
 
@@ -715,9 +720,9 @@ def _merge_polyphonic_notes(
     for pn in poly_notes:
         pn_start, pn_end, pn_midi = pn[0], pn[1], pn[2]
         
-        # 既存ノートとの重複チェック
+        # 既存ノート（main + 追加済みpoly）との重複チェック
         is_duplicate = False
-        for mn in main_notes:
+        for mn in merged:
             mn_start, mn_end, mn_midi = mn[0], mn[1], mn[2]
             # 同一ピッチで時間的に重複している場合はスキップ
             if (mn_midi == pn_midi and

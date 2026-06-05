@@ -6,9 +6,8 @@ chord_synth.py
 from __future__ import annotations
 import io
 import struct
-import math
 import numpy as np
-from typing import List, Optional
+from typing import List
 
 # ============================================================
 # 音名 → MIDI番号 / 周波数変換

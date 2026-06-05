@@ -28,7 +28,6 @@ Backward compatible: also accepts {midi_pitch, start_time, end_time, ...}
 from typing import List, Dict, Optional, Tuple, Union
 from itertools import product as iter_product
 from collections import Counter
-import math
 
 # =========================================================================
 # Tuning Definitions (40+ presets)

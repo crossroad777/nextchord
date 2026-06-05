@@ -111,9 +111,7 @@ except ImportError as e:
     print(f"Warning: gp5_export not available: {e}")
     notes_to_gp5 = None
 
-import re
 
-import time
 
 # --- Audio Metadata Extraction ---
 try:
@@ -1156,10 +1154,14 @@ async def update_chords(session_id: str, request: Request):
             structured_data[idx]["chord"] = new_chord
             changed += 1
 
-    # 保存（structured_data.jsonに書き込み）
+    # 保存（structured_data.jsonに書き込み + in-memory更新）
     sd_path = session_dir / "structured_data.json"
     with open(sd_path, "w", encoding="utf-8") as f:
         json.dump(structured_data, f, ensure_ascii=False, indent=2)
+    
+    # in-memory sessionも更新（ファイルとメモリの乖離を防止）
+    if "result" in sessions[session_id] and sessions[session_id]["result"]:
+        sessions[session_id]["result"]["structured_data"] = structured_data
 
     print(f"[{session_id}] Updated {changed} chord(s)")
     return {"status": "ok", "changed": changed}
@@ -1491,7 +1493,7 @@ async def get_file(session_id: str, filename: str):
     
     # Verify that the resolved file path is inside session_dir
     session_dir_resolved = session_dir.resolve()
-    if not str(file_path).startswith(str(session_dir_resolved)):
+    if not file_path.is_relative_to(session_dir_resolved):
         raise HTTPException(status_code=403, detail="Access denied")
     
     # ブラウザOOM防止: converted.wav を要求された場合、playback.mp3 があればそちらを返す

@@ -125,17 +125,17 @@ class BTCEngine:
             input_path = str(wav_path)
 
         # CQT 特徴量を計算
-        feature, feature_per_second, song_length_second = audio_file_to_features(
-            input_path, self.config
-        )
-
-        # 一時ファイル削除
-        if use_hpss:
-            import os as _os
-            try:
-                _os.unlink(tmp.name)
-            except Exception:
-                pass
+        try:
+            feature, feature_per_second, song_length_second = audio_file_to_features(
+                input_path, self.config
+            )
+        finally:
+            # 一時ファイル削除
+            if use_hpss:
+                try:
+                    os.unlink(tmp.name)
+                except OSError:
+                    pass
 
         # 正規化
         feature = feature.T
@@ -204,7 +204,9 @@ class BTCEngine:
             for i in range(1, len(seg_starts)):
                 duration = (seg_starts[i] - merged_s[-1])
                 if duration < 0.5:
-                    continue  # 前のセグメントに吸収
+                    # 前のセグメントに吸収（ラベルは前のものを維持、
+                    # 次のセグメント開始時刻まで前のセグメントが延長される）
+                    continue
                 merged_s.append(seg_starts[i])
                 merged_l.append(seg_labels[i])
             seg_starts, seg_labels = merged_s, merged_l

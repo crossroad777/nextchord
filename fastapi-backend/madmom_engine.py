@@ -3,6 +3,7 @@ Madmom Chord Recognition Engine
 Uses CNN feature extraction + CRF decoding for chord recognition.
 Interface: detect_chords(wav_path) -> (seg_starts, seg_labels)
 """
+import os
 import numpy as np
 from pathlib import Path
 
@@ -46,7 +47,7 @@ class MadmomChordEngine:
             import librosa
             import soundfile as sf
             import tempfile
-            import os
+
             y, sr = librosa.load(wav_path, sr=44100, mono=True,
                                  duration=MAX_DURATION)
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
@@ -67,7 +68,7 @@ class MadmomChordEngine:
         if truncated_path:
             try:
                 os.remove(truncated_path)
-            except:
+            except OSError:
                 pass
 
         # Convert (start, end, label) tuples to (seg_starts, seg_labels)

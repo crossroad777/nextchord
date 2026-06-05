@@ -109,7 +109,10 @@ def compute_chroma(wav_path: str, hop_length: int = 1024) -> Tuple[np.ndarray, f
     音声からクロマグラムを計算。
     hop_length を 1024 (約46ms) に設定して精細なタイミング解像度を確保。
     """
-    y, sr = librosa.load(str(wav_path), sr=22050, mono=True)
+    from waveform_utils import load_audio_cached
+    y, sr = load_audio_cached(str(wav_path), sr=22050, mono=True)
+    # load_audio_cached returns read-only array, need writable copy for HPSS
+    y = y.copy()
     y_harm, _ = librosa.effects.hpss(y, margin=4.0)
 
     # CQT (高解像度) + STFT の統合
@@ -216,15 +219,21 @@ def refine_timing(
         best_score = -1.0
         best_frame = int(t / frame_time)
 
-        for f in range(f_lo, f_hi + 1):
-            vec = chroma[:, f]
-            n = np.linalg.norm(vec)
-            if n < 0.01:
-                continue
-            score = float(np.dot(vec / n, tmpl))
-            if score > best_score:
-                best_score = score
-                best_frame = f
+        # ベクトル化: スライス全体を一括計算
+        slice_chroma = chroma[:, f_lo:f_hi + 1]  # (12, W)
+        norms = np.linalg.norm(slice_chroma, axis=0)  # (W,)
+        valid = norms >= 0.01
+        if not np.any(valid):
+            refined_starts.append(float(t))
+            refined_labels.append(norm_label)
+            continue
+        # 正規化してテンプレートとの内積を一括計算
+        safe_norms = np.where(valid, norms, 1.0)
+        normed_chroma = slice_chroma / safe_norms[np.newaxis, :]
+        scores = tmpl @ normed_chroma  # (W,)
+        scores = np.where(valid, scores, -1.0)
+        best_local = int(np.argmax(scores))
+        best_frame = f_lo + best_local
 
         best_t = best_frame * frame_time
         # 前のセグメントの開始より前にはならない

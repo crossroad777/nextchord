@@ -65,7 +65,6 @@ class ChordKnowledgeBase:
             return
         print('[Music21KB] Building chord knowledge base...')
         self._build_chord_features()
-        self._build_similarity_matrix()
         self._build_diatonic_chords()
         self._build_progression_probs()
         self._built = True
@@ -168,17 +167,22 @@ class ChordKnowledgeBase:
         return template / norm if norm > 0 else template
 
     def _build_similarity_matrix(self):
-        """コード間の共通音数に基づく類似度行列"""
-        all_chords = list(self.chord_features.keys())
-        for i, c1 in enumerate(all_chords):
-            pcs1 = self.chord_features[c1]['pitch_classes']
-            for c2 in all_chords[i:]:
-                pcs2 = self.chord_features[c2]['pitch_classes']
-                common = len(pcs1 & pcs2)
-                total  = len(pcs1 | pcs2)
-                sim = common / total if total > 0 else 0.0
-                self.similarity_matrix[(c1, c2)] = sim
-                self.similarity_matrix[(c2, c1)] = sim
+        """Deprecated: use get_similarity() instead for on-demand computation."""
+        pass
+
+    def get_similarity(self, c1: str, c2: str) -> float:
+        """コード間の類似度をオンデマンド計算（lru_cacheで高速化）"""
+        key = (c1, c2) if c1 <= c2 else (c2, c1)
+        if key in self.similarity_matrix:
+            return self.similarity_matrix[key]
+        pcs1 = self.chord_features.get(c1, {}).get('pitch_classes', set())
+        pcs2 = self.chord_features.get(c2, {}).get('pitch_classes', set())
+        common = len(pcs1 & pcs2)
+        total = len(pcs1 | pcs2)
+        sim = common / total if total > 0 else 0.0
+        self.similarity_matrix[key] = sim
+        self.similarity_matrix[(c2, c1)] = sim
+        return sim
 
     def _build_diatonic_chords(self):
         """各キーのダイアトニックコードリスト"""
@@ -241,12 +245,17 @@ class ChordKnowledgeBase:
         """
         ダイアトニックコードなら 1.15 を返す。
         ノンダイアトニックなら 0.85 を返す。
+        root + quality の両方を照合する。
         """
         diatonic = self.diatonic_chords.get(key_str, [])
         if not diatonic:
             return 1.0
 
-        # 簡易照合（ルート音が一致するか）
+        # root + quality で正確に照合
+        if chord_name in diatonic:
+            return 1.15  # 完全一致
+
+        # ルート音のみ一致（部分的にダイアトニック）
         root_str = chord_name[:2] if len(chord_name)>1 and chord_name[1] in '#b' else chord_name[:1]
         chord_root_pc = NOTE_MAP.get(root_str)
         if chord_root_pc is None:
@@ -255,7 +264,7 @@ class ChordKnowledgeBase:
         for d in diatonic:
             d_root = d[:2] if len(d)>1 and d[1] in '#b' else d[:1]
             if NOTE_MAP.get(d_root) == chord_root_pc:
-                return 1.15  # ダイアトニック
+                return 1.05  # ルートのみ一致は控えめなブースト
 
         return 0.85  # ノンダイアトニック
 

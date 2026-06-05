@@ -17,7 +17,6 @@ from __future__ import annotations
 import os
 import pathlib
 import subprocess
-import tempfile
 import time
 import warnings
 from typing import List, Optional, Tuple, Dict
@@ -74,7 +73,8 @@ def separate_audio(
         if result.returncode != 0:
             # CPU fallback
             print(f'[Demucs] GPU failed, trying CPU...')
-            cmd[cmd.index(device)] = 'cpu'
+            device_idx = cmd.index('--device')
+            cmd[device_idx + 1] = 'cpu'
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
             raise RuntimeError(f'Demucs failed: {result.stderr[:500]}')
@@ -89,6 +89,9 @@ def separate_audio(
             stems[stem_name] = str(p)
     
     print(f'[Demucs] Done. Stems: {list(stems.keys())}')
+    if len(stems) < 4:
+        missing = [s for s in ('vocals', 'drums', 'bass', 'other') if s not in stems]
+        print(f'[Demucs] WARNING: Missing stems: {missing}')
     return stems
 
 
@@ -183,7 +186,6 @@ def analyze_chords_madmom(
                 chord = convert_label(str(seg[2]))
                 break
         timeline.append((t, chord))
-        prev_chord = chord
 
     return timeline
 
@@ -247,7 +249,7 @@ def get_bass_roots(
             median_f0 = float(np.median(valid_f0))
             midi_num = int(round(librosa.hz_to_midi(median_f0)))
             root_pc = midi_num % 12
-            roots[t] = NOTE_NAMES[root_pc]
+            roots[round(t, 3)] = NOTE_NAMES[root_pc]
         
         print(f"[Bass] Root detection completed. Estimated roots for {len(roots)} beats.")
         return roots
@@ -274,7 +276,6 @@ def ensemble_final(
     2. Bass ルートとmadmomが矛盾する場合 → Basic Pitchで仲裁
     3. どちらも信頼できない場合 → madmomを採用
     """
-    NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
 
     def chord_root(c: str) -> str:
         if not c or c in ('N.C.', 'X', 'N'):
@@ -296,7 +297,7 @@ def ensemble_final(
     for t in beat_times:
         mm_chord  = lookup(madmom_timeline, t) or 'N.C.'
         bp_chord  = lookup(bp_timeline, t) if bp_timeline else None
-        bass_root = bass_roots.get(t)
+        bass_root = bass_roots.get(round(t, 3))
 
         mm_root = chord_root(mm_chord)
         bp_root = chord_root(bp_chord) if bp_chord else None

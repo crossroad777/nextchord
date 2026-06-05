@@ -1451,6 +1451,20 @@ def _group_tab_simultaneous(tabs: List[Dict], tolerance: float = 0.03) -> List[L
     return groups
 
 
+_DIVS_EXACT_MAP = {
+    48: ("whole", False),
+    36: ("half", True),      # 付点2分
+    24: ("half", False),
+    18: ("quarter", True),   # 付点4分
+    12: ("quarter", False),
+    9:  ("eighth", True),    # 付点8分
+    6:  ("eighth", False),
+    4:  ("eighth", False),   # 三連符（8分）
+    3:  ("16th", False),
+    2:  ("16th", False),
+    1:  ("32nd", False),
+}
+
 def _divs_to_note_type(divs: int, divisions: int = 12):
     """divisions値から (note_type, is_dotted) を返す。
     
@@ -1463,24 +1477,11 @@ def _divs_to_note_type(divs: int, divisions: int = 12):
     赤い四角やリズムのズレを防止する。
     """
     # 正確な値にマッチ（付点音符対応）
-    exact_map = {
-        48: ("whole", False),
-        36: ("half", True),      # 付点2分
-        24: ("half", False),
-        18: ("quarter", True),   # 付点4分
-        12: ("quarter", False),
-        9:  ("eighth", True),    # 付点8分
-        6:  ("eighth", False),
-        4:  ("eighth", False),   # 三連符（8分）
-        3:  ("16th", False),
-        2:  ("16th", False),
-        1:  ("32nd", False),
-    }
-    if divs in exact_map:
-        return exact_map[divs]
+    if divs in _DIVS_EXACT_MAP:
+        return _DIVS_EXACT_MAP[divs]
     # 最も近い標準音価にスナップ
-    closest = min(exact_map.keys(), key=lambda k: abs(k - divs))
-    return exact_map[closest]
+    closest = min(_DIVS_EXACT_MAP.keys(), key=lambda k: abs(k - divs))
+    return _DIVS_EXACT_MAP[closest]
 
 
 def _chord_name_to_kind(chord_name: str) -> str:

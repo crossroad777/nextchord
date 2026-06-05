@@ -1,5 +1,6 @@
-import json
-import re
+import logging
+
+logger = logging.getLogger(__name__)
 
 def _section_to_japanese(section_label):
     mapping = {
@@ -114,7 +115,8 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
         result += f"[{chord_insertions_regular[text_len]}]"
         
     if "君を忘れ" in text:
-        print(f"DEBUG _insert_chords: text='{text}', chord_changes={chord_changes}, raw_positions={raw_positions}, bars={chord_insertions_bars}, reg={chord_insertions_regular}, result='{result}'")
+        logger.debug("_insert_chords: text='%s', chord_changes=%s, raw_positions=%s, bars=%s, reg=%s, result='%s'",
+                     text, chord_changes, raw_positions, chord_insertions_bars, chord_insertions_regular, result)
         
     return result
 
@@ -274,7 +276,8 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
             combined_text = "".join([p["text"] for p in fallback_phrases])
             
         if "捨て" in combined_text:
-            print(f"DEBUG window_words: ws={ws}, we={we}, window_words={window_words}, combined_text='{combined_text}'")
+            logger.debug("window_words: ws=%s, we=%s, window_words=%s, combined_text='%s'",
+                         ws, we, window_words, combined_text)
         
         if window_chords:
             line = _insert_chords_into_lyrics(combined_text, window_chords, window_words, ws, we)

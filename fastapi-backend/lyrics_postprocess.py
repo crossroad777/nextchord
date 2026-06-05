@@ -8,6 +8,20 @@ import re
 import unicodedata
 
 
+_CORRECTIONS = {
+    # 汎用的なWhisper誤認識パターンのみ
+    # ※曲固有の誤認識はここに入れない（手動編集で対応）
+    
+    # 繰り返しハルシネーション対策（最後にクレジットが出る）
+    '作詞・作曲・編曲・編曲': '',
+    '作詞作曲': '',
+    '作詞・作曲': '',
+    'ご視聴ありがとうございました': '',
+    'チャンネル登録': '',
+    'ご清聴ありがとうございました': '',
+}
+
+
 def postprocess_japanese_lyrics(text: str) -> str:
     """
     日本語歌詞テキストの後処理。
@@ -27,20 +41,7 @@ def postprocess_japanese_lyrics(text: str) -> str:
     result = re.sub(r'(?<=[ぁ-んァ-ヶー\u4e00-\u9fff])\s+(?=[ぁ-んァ-ヶー\u4e00-\u9fff])', '', result)
 
     # === 3. Whisperのよくある誤認識パターン修正 ===
-    _corrections = {
-        # 汎用的なWhisper誤認識パターンのみ
-        # ※曲固有の誤認識はここに入れない（手動編集で対応）
-        
-        # 繰り返しハルシネーション対策（最後にクレジットが出る）
-        '作詞・作曲・編曲・編曲': '',
-        '作詞作曲': '',
-        '作詞・作曲': '',
-        'ご視聴ありがとうございました': '',
-        'チャンネル登録': '',
-        'ご清聴ありがとうございました': '',
-    }
-
-    for wrong, correct in _corrections.items():
+    for wrong, correct in _CORRECTIONS.items():
         if wrong in result:
             result = result.replace(wrong, correct)
 

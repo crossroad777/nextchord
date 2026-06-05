@@ -14,9 +14,6 @@ HMM Viterbiによるルート/品質補正はBeatles 180曲ベンチマークで
   → HMMアプローチは廃止
 """
 
-import numpy as np
-from pathlib import Path
-from collections import Counter
 
 _ROOT_TO_PC = {
     'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
@@ -24,8 +21,6 @@ _ROOT_TO_PC = {
     'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11
 }
 
-_DIATONIC_MAJOR_ROOTS = {0, 2, 4, 5, 7, 9, 11}
-_DIATONIC_MINOR_ROOTS = {0, 2, 3, 5, 7, 8, 10}
 
 
 def _extract_root_pc(chord_name):
@@ -86,4 +81,11 @@ def confidence_filter(
 # 後方互換性のため viterbi_chord_correction はダミーとして残す
 def viterbi_chord_correction(beat_chords, key_name, confidences=None, transition_weight=0.15):
     """HMM Viterbiは廃止。入力をそのまま返す。"""
+    import warnings
+    warnings.warn(
+        "viterbi_chord_correction is deprecated and will be removed in a future version. "
+        "Use confidence_filter instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
     return list(beat_chords)

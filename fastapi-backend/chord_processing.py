@@ -37,6 +37,7 @@ def analyze_sections(y, sr):
 def standardized_key(key_idx: int) -> str:
     keys = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B']
     # CNNKeyRecognitionProcessor outputs 24 indices (0-11 Major, 12-23 Minor)
+    key_idx = key_idx % 24
     if key_idx < 12:
         return f"{keys[key_idx]} Major"
     else:
@@ -46,6 +47,23 @@ def standardized_key(key_idx: int) -> str:
 # =========================================================================
 # コード標準化
 # =========================================================================
+
+_QUALITY_MAP = {
+    "maj": "",
+    "min": "m",
+    "dim": "dim",
+    "aug": "aug",
+    "min6": "m6",
+    "maj6": "6",
+    "min7": "m7",
+    "minmaj7": "mMaj7",
+    "maj7": "Maj7",
+    "7": "7",
+    "dim7": "dim7",
+    "hdim7": "m7(b5)",
+    "sus2": "sus2",
+    "sus4": "sus4",
+}
 
 def standardize_chord(chord_label: str) -> str:
     """
@@ -67,24 +85,7 @@ def standardize_chord(chord_label: str) -> str:
             quality, bass = quality.split("/", 1)
             slash = f"/{bass}"
         
-        quality_map = {
-            "maj": "",
-            "min": "m",
-            "dim": "dim",
-            "aug": "aug",
-            "min6": "m6",
-            "maj6": "6",
-            "min7": "m7",
-            "minmaj7": "mMaj7",
-            "maj7": "Maj7",
-            "7": "7",
-            "dim7": "dim7",
-            "hdim7": "m7(b5)",
-            "sus2": "sus2",
-            "sus4": "sus4",
-        }
-        
-        suffix = quality_map.get(quality, quality)
+        suffix = _QUALITY_MAP.get(quality, quality)
         return f"{root}{suffix}{slash}"
     except ValueError:
         return chord_label
@@ -100,7 +101,7 @@ def _smooth_chord_segments(seg_starts, seg_labels, min_duration=0.5):
     - min_duration秒未満の短いセグメントを前のセグメントにマージ
     - ノイズの多いDeepChromaの出力を安定化
     """
-    if seg_starts is None or seg_labels is None or len(seg_starts) == 0:
+    if seg_starts is None or seg_labels is None or len(seg_starts) == 0 or len(seg_labels) == 0:
         return seg_starts, seg_labels
     
     starts = list(seg_starts)
@@ -299,6 +300,33 @@ _ENHARMONIC_FLAT_MAP = {
 # ♭系キー（これらのキーでは♭表記を使う）
 _FLAT_KEYS = {"F", "Bb", "Eb", "Ab", "Db"}
 
+# ダイアトニックコード（_normalize_chords_to_key用）
+_NORMALIZE_DIATONIC = {
+    'C':  {'C', 'Dm', 'Em', 'F', 'G', 'Am', 'Bdim'},
+    'C#': {'C#', 'D#m', 'E#m', 'F#', 'G#', 'A#m', 'B#dim'},
+    'D':  {'D', 'Em', 'F#m', 'G', 'A', 'Bm', 'C#dim'},
+    'Eb': {'Eb', 'Fm', 'Gm', 'Ab', 'Bb', 'Cm', 'Ddim'},
+    'E':  {'E', 'F#m', 'G#m', 'A', 'B', 'C#m', 'D#dim'},
+    'F':  {'F', 'Gm', 'Am', 'Bb', 'C', 'Dm', 'Edim'},
+    'F#': {'F#', 'G#m', 'A#m', 'B', 'C#', 'D#m', 'E#dim'},
+    'G':  {'G', 'Am', 'Bm', 'C', 'D', 'Em', 'F#dim'},
+    'Ab': {'Ab', 'Bbm', 'Cm', 'Db', 'Eb', 'Fm', 'Gdim'},
+    'A':  {'A', 'Bm', 'C#m', 'D', 'E', 'F#m', 'G#dim'},
+    'Bb': {'Bb', 'Cm', 'Dm', 'Eb', 'F', 'Gm', 'Adim'},
+    'B':  {'B', 'C#m', 'D#m', 'E', 'F#', 'G#m', 'A#dim'},
+}
+
+# マイナーキーのダイアトニック（自然短音階 + 和声短音階のV）
+_NORMALIZE_DIATONIC_MINOR = {
+    'Am': {'Am', 'Bdim', 'C', 'Dm', 'Em', 'E', 'F', 'G'},
+    'Bm': {'Bm', 'C#dim', 'D', 'Em', 'F#m', 'F#', 'G', 'A'},
+    'Cm': {'Cm', 'Ddim', 'Eb', 'Fm', 'Gm', 'G', 'Ab', 'Bb'},
+    'Dm': {'Dm', 'Edim', 'F', 'Gm', 'Am', 'A', 'Bb', 'C'},
+    'Em': {'Em', 'F#dim', 'G', 'Am', 'Bm', 'B', 'C', 'D'},
+    'F#m': {'F#m', 'G#dim', 'A', 'Bm', 'C#m', 'C#', 'D', 'E'},
+    'G#m': {'G#m', 'A#dim', 'B', 'C#m', 'D#m', 'D#', 'E', 'F#'},
+}
+
 
 # =========================================================================
 # コード正規化（キーに合わせた表記統一 + チャタリング除去 + レアコード統合）
@@ -358,39 +386,13 @@ def _normalize_chords_to_key(beat_chords, key_name):
     # Step 2.5: ダイアトニックバイアス補正
     # キーのダイアトニックコードに対し、非ダイアトニックで出現数が極めて少ないコードを補正
     # 例: G major で Cm(2回) → C に補正（Cはダイアトニック）
-    _DIATONIC = {
-        'C':  {'C', 'Dm', 'Em', 'F', 'G', 'Am', 'Bdim'},
-        'C#': {'C#', 'D#m', 'E#m', 'F#', 'G#', 'A#m', 'B#dim'},
-        'D':  {'D', 'Em', 'F#m', 'G', 'A', 'Bm', 'C#dim'},
-        'Eb': {'Eb', 'Fm', 'Gm', 'Ab', 'Bb', 'Cm', 'Ddim'},
-        'E':  {'E', 'F#m', 'G#m', 'A', 'B', 'C#m', 'D#dim'},
-        'F':  {'F', 'Gm', 'Am', 'Bb', 'C', 'Dm', 'Edim'},
-        'F#': {'F#', 'G#m', 'A#m', 'B', 'C#', 'D#m', 'E#dim'},
-        'G':  {'G', 'Am', 'Bm', 'C', 'D', 'Em', 'F#dim'},
-        'Ab': {'Ab', 'Bbm', 'Cm', 'Db', 'Eb', 'Fm', 'Gdim'},
-        'A':  {'A', 'Bm', 'C#m', 'D', 'E', 'F#m', 'G#dim'},
-        'Bb': {'Bb', 'Cm', 'Dm', 'Eb', 'F', 'Gm', 'Adim'},
-        'B':  {'B', 'C#m', 'D#m', 'E', 'F#', 'G#m', 'A#dim'},
-    }
-    
-    # マイナーキーのダイアトニック（自然短音階 + 和声短音階のV）
-    _DIATONIC_MINOR = {
-        'Am': {'Am', 'Bdim', 'C', 'Dm', 'Em', 'E', 'F', 'G'},
-        'Bm': {'Bm', 'C#dim', 'D', 'Em', 'F#m', 'F#', 'G', 'A'},
-        'Cm': {'Cm', 'Ddim', 'Eb', 'Fm', 'Gm', 'G', 'Ab', 'Bb'},
-        'Dm': {'Dm', 'Edim', 'F', 'Gm', 'Am', 'A', 'Bb', 'C'},
-        'Em': {'Em', 'F#dim', 'G', 'Am', 'Bm', 'B', 'C', 'D'},
-        'F#m': {'F#m', 'G#dim', 'A', 'Bm', 'C#m', 'C#', 'D', 'E'},
-        'G#m': {'G#m', 'A#dim', 'B', 'C#m', 'D#m', 'D#', 'E', 'F#'},
-    }
-    
     key_mode = key_name.split()[-1].lower() if len(key_name.split()) > 1 else 'major'
     diatonic_set = set()
     if key_mode == 'minor':
         minor_key = key_root + 'm'
-        diatonic_set = _DIATONIC_MINOR.get(minor_key, set())
+        diatonic_set = _NORMALIZE_DIATONIC_MINOR.get(minor_key, set())
     if not diatonic_set:
-        diatonic_set = _DIATONIC.get(key_root, set())
+        diatonic_set = _NORMALIZE_DIATONIC.get(key_root, set())
     
     # 非ダイアトニックコードの補正マップ（同ルートのダイアトニックコードに変換）
     diatonic_fixes = 0

@@ -302,6 +302,13 @@ _COMMON_TRANSITIONS = {
 }
 
 
+_NOTE_TO_PC = {
+    'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
+    'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,
+    'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
+}
+
+
 def _transition_score(prev_chord: str, next_chord: str) -> float:
     """Estimate how natural the transition from prev_chord to next_chord is.
 
@@ -311,12 +318,6 @@ def _transition_score(prev_chord: str, next_chord: str) -> float:
         return 0.5  # neutral
 
     # Extract root pitch class
-    _NOTE_TO_PC = {
-        'C': 0, 'C#': 1, 'Db': 1, 'D': 2, 'D#': 3, 'Eb': 3,
-        'E': 4, 'F': 5, 'F#': 6, 'Gb': 6, 'G': 7, 'G#': 8,
-        'Ab': 8, 'A': 9, 'A#': 10, 'Bb': 10, 'B': 11,
-    }
-
     def _root_pc(chord_name):
         if len(chord_name) > 1 and chord_name[1] in '#b':
             return _NOTE_TO_PC.get(chord_name[:2])

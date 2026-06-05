@@ -147,9 +147,15 @@ def notes_to_gp5(
     # --- Voice分離 (pitch ベース) ---
     SPLIT_PITCH = 52  # E3
 
+    # Pre-group notes by bar for O(N) instead of O(bars*notes)
+    from collections import defaultdict as _ddict
+    _notes_by_bar = _ddict(list)
+    for e in note_entries:
+        _notes_by_bar[e["bar"]].append(e)
+    
     bars_data = []
     for bar_num in range(total_bars):
-        bar_notes = [e for e in note_entries if e["bar"] == bar_num]
+        bar_notes = _notes_by_bar.get(bar_num, [])
         melody = [n for n in bar_notes if not _is_bass(n, SPLIT_PITCH)]
         bass = [n for n in bar_notes if _is_bass(n, SPLIT_PITCH)]
         bars_data.append({"melody": melody, "bass": bass})
@@ -346,9 +352,19 @@ def _build_voice_beats(
     # 16分音符グリッド (straight)
     snap_grid = list(range(0, bar_total_divs + 1, 3))  # 0,3,6,9,12,...
 
+    from bisect import bisect_left as _bl
+
     for group_idx, group in enumerate(groups):
         raw_pos = int(float(group[0].get("beat_pos", 0)))
-        target_pos = min(snap_grid, key=lambda x: abs(x - raw_pos))
+        # bisect O(log N) snap to nearest grid point
+        _si = _bl(snap_grid, raw_pos)
+        if _si >= len(snap_grid):
+            target_pos = snap_grid[-1]
+        elif _si == 0:
+            target_pos = snap_grid[0]
+        else:
+            a, b = snap_grid[_si - 1], snap_grid[_si]
+            target_pos = a if abs(a - raw_pos) <= abs(b - raw_pos) else b
 
         # ── bar-end guard ──
         if current_pos >= bar_total_divs or target_pos >= bar_total_divs:
@@ -367,7 +383,14 @@ def _build_voice_beats(
         min_dur = 3  # sixteenth note
         if group_idx + 1 < len(groups):
             next_raw = int(float(groups[group_idx + 1][0].get("beat_pos", 0)))
-            next_target = min(snap_grid, key=lambda x: abs(x - next_raw))
+            _ni = _bl(snap_grid, next_raw)
+            if _ni >= len(snap_grid):
+                next_target = snap_grid[-1]
+            elif _ni == 0:
+                next_target = snap_grid[0]
+            else:
+                a2, b2 = snap_grid[_ni - 1], snap_grid[_ni]
+                next_target = a2 if abs(a2 - next_raw) <= abs(b2 - next_raw) else b2
             next_target = max(next_target, target_pos + min_dur)
         else:
             next_target = bar_total_divs
@@ -405,6 +428,8 @@ def _build_voice_beats(
         gp_dur, gp_dotted, gp_tuplet = _divs_to_gp_duration(dur_divs)
         beat.duration.value = gp_dur
         beat.duration.isDotted = gp_dotted
+        if gp_tuplet:
+            beat.duration.tuplet = gp.Tuplet(enters=3, times=2)
         # テクニック (Phase 2 で追加予定) -- 現在はスキップ
 
         for entry in group:
@@ -443,11 +468,6 @@ def _parse_time_sig(ts: str) -> tuple[int, int]:
             return int(parts[0]), int(parts[1])
         except (ValueError, IndexError):
             pass
-    # Fallback defaults
-    if ts == "3/4":
-        return 3, 4
-    elif ts == "6/8":
-        return 6, 8
     return 4, 4
 
 
@@ -551,8 +571,8 @@ def _divs_to_gp_beats_rest(divs: int, voice) -> list:
     beats_out = []
     remaining = divs
 
-    # Standard durations (largest first)
-    std_durs = [48, 36, 24, 18, 12, 9, 6, 3, 2, 1]
+    # Reuse module-level NORMAL_DURS
+    std_durs = NORMAL_DURS
 
     while remaining > 0:
         best = 1

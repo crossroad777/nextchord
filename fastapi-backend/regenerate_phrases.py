@@ -56,14 +56,15 @@ def regenerate_display_phrases(session_dir):
         "first_text": new_display[0]["text"][:30] if new_display else ""
     }
 
-# 全セッション再生成
-results = []
-for entry in sorted(os.listdir(UPLOADS_DIR)):
-    full_path = os.path.join(UPLOADS_DIR, entry)
-    if os.path.isdir(full_path):
-        r = regenerate_display_phrases(full_path)
-        if r:
-            results.append(r)
-            print(f"  {r['session']}: {r['old_count']} -> {r['new_count']} phrases (bars={r['bars']})")
+if __name__ == '__main__':
+    # 全セッション再生成
+    results = []
+    for entry in sorted(os.listdir(UPLOADS_DIR)):
+        full_path = os.path.join(UPLOADS_DIR, entry)
+        if os.path.isdir(full_path):
+            r = regenerate_display_phrases(full_path)
+            if r:
+                results.append(r)
+                print(f"  {r['session']}: {r['old_count']} -> {r['new_count']} phrases (bars={r['bars']})")
 
-print(f"\nRegenerated {len(results)} sessions")
+    print(f"\nRegenerated {len(results)} sessions")

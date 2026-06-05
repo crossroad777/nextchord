@@ -22,6 +22,7 @@ from pathlib import Path
 import numpy as np
 import gc
 import librosa
+from collections import Counter, defaultdict
 
 from chord_processing import (
     analyze_sections,
@@ -95,8 +96,7 @@ def _is_hallucination(text: str) -> bool:
     # 同じ単語が3回以上繰り返される（例: "歌 歌 歌 歌 歌"）
     words = t.split()
     if len(words) >= 3:
-        from collections import Counter as _Counter
-        word_counts = _Counter(words)
+        word_counts = Counter(words)
         most_common_count = word_counts.most_common(1)[0][1]
         if most_common_count >= 3 and most_common_count / len(words) > 0.5:
             return True
@@ -370,7 +370,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         seg_s, seg_l = cm.detect_chords(btc_input_path)
                         cm.unload()  # VRAM解放
                     chord_engine_used = 'ChordMini'
-                    from collections import Counter
                     label_counts = Counter(seg_l)
                     print(f"[{sid}] [ChordMini] Total segments: {len(seg_l)}, top: {label_counts.most_common(10)}")
                 except Exception as e:
@@ -392,7 +391,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         gc.collect()
                         import torch as _t; _t.cuda.empty_cache() if _t.cuda.is_available() else None
                     chord_engine_used = 'BTC'
-                    from collections import Counter
                     label_counts = Counter(seg_l)
                     print(f"[{sid}] [BTC] Total segments: {len(seg_l)}, top: {label_counts.most_common(10)}")
                 except Exception as e:
@@ -454,32 +452,34 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     rolled = np.roll(tmpl, i)
                     chord_templates[f"{name}:{qual}"] = rolled / (np.linalg.norm(rolled) + 1e-8)
             
-            # フレームごとにテンプレートマッチング
+            # テンプレート行列を事前構築 (vectorized matching)
+            template_names = list(chord_templates.keys())
+            template_matrix = np.array([chord_templates[n] for n in template_names])  # (96, 12)
+            
+            # 全フレームを一括処理 — 行列乗算で O(N*96) Python loop を排除
             n_frames = chroma.shape[1]
+            frame_norms = np.linalg.norm(chroma, axis=0, keepdims=True)  # (1, N)
+            frame_norms = np.where(frame_norms < 1e-8, 1.0, frame_norms)
+            chroma_normed = chroma / frame_norms  # (12, N)
+            
+            # スコア行列: (96, N) = templates(96,12) @ chroma_normed(12,N)
+            all_scores = template_matrix @ chroma_normed  # (96, N)
+            
+            # 各フレームの最大スコアとそのインデックス
+            best_indices = np.argmax(all_scores, axis=0)  # (N,)
+            best_scores = np.max(all_scores, axis=0)      # (N,)
+            
+            # 無音フレームとスコア閾値を処理
+            frame_energy = np.sum(chroma, axis=0)  # (N,)
             frame_chords = []
             frame_scores = []
-            
             for f in range(n_frames):
-                frame = chroma[:, f]
-                if np.sum(frame) < 0.01:
+                if frame_energy[f] < 0.01 or best_scores[f] <= 0.3:
                     frame_chords.append("N")
                     frame_scores.append(0.0)
-                    continue
-                
-                # 正規化
-                frame_norm = frame / (np.linalg.norm(frame) + 1e-8)
-                
-                best_chord = "N"
-                best_score = 0.3  # 最低閾値
-                
-                for chord_name, template in chord_templates.items():
-                    score = np.dot(frame_norm, template)
-                    if score > best_score:
-                        best_score = score
-                        best_chord = chord_name
-                
-                frame_chords.append(best_chord)
-                frame_scores.append(best_score)
+                else:
+                    frame_chords.append(template_names[best_indices[f]])
+                    frame_scores.append(float(best_scores[f]))
             
             # メディアンフィルタ: 3フレーム窓で短い揺らぎを除去
             if len(frame_chords) > 3:
@@ -978,7 +978,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments found (raw={gap_seg_count})")
                             finally:
                                 import os
-                                os.unlink(gap_wav.name)
+                                if os.path.exists(gap_wav.name):
+                                    os.unlink(gap_wav.name)
                                 # ギャップモデルのVRAM解放
                                 try:
                                     if '_gap_model' in locals():
@@ -1521,6 +1522,16 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             preview_raw = beat_chords[:40]
             print(f"[{session_id}] [CHORD] Raw detected (first 40): {preview_raw}")
             
+            # Pre-index lyrics by (bar, beat) for O(1) lookup (was O(N²))
+            from collections import defaultdict
+            _lyrics_index = defaultdict(list)
+            for lyr in lyrics_data:
+                _lyrics_index[(lyr[0], lyr[1])].append(lyr)
+            
+            # Pre-sort section starts for bisect O(log N) lookup (was O(N²))
+            from bisect import bisect_right as _bisect_right
+            _section_starts = [s[0] for s in sections]
+            
             for i, b_time in enumerate(v_time):
                 bar = i // beats_per_bar
                 beat_in_bar = i % beats_per_bar
@@ -1529,20 +1540,19 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 
                 clean_chord = beat_chords[i]
                 
-                # 歌詞のマッピング
+                # 歌詞のマッピング — O(1) dict lookup
                 matching_lyrics = []
                 lyric_duration = 0.0
-                for lyr in lyrics_data:
-                    if lyr[0] == bar and lyr[1] == beat_in_bar:
-                        matching_lyrics.append(lyr[4])
-                        lyric_duration += (lyr[3] - lyr[2])
+                for lyr in _lyrics_index.get((bar, beat_in_bar), []):
+                    matching_lyrics.append(lyr[4])
+                    lyric_duration += (lyr[3] - lyr[2])
                 
-                # セグメントのマッピング
+                # セグメントのマッピング — O(log N) bisect lookup
                 section_label = ""
-                for s_start, s_end, s_lbl in sections:
-                    if s_start <= b_time < s_end:
-                        section_label = s_lbl
-                        break
+                if sections:
+                    si = _bisect_right(_section_starts, b_time) - 1
+                    if si >= 0 and si < len(sections) and sections[si][0] <= b_time < sections[si][1]:
+                        section_label = sections[si][2]
 
                 structured.append({
                     "bar": bar + 1, "beat": beat_in_bar + 1, "time": round(b_time, 3),
@@ -1557,11 +1567,22 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         # コード遷移タイミングをビート位置にスナップ (100ms以内)
         if v_time is not None and len(v_time) > 0:
             snap_count = 0
-            v_time_arr = np.array(v_time)
+            v_time_arr = np.array(v_time, dtype=float)
+            # O(N log N) searchsorted instead of O(N²) argmin per entry
             for entry in structured:
-                idx = np.argmin(np.abs(v_time_arr - entry["time"]))
-                nearest_beat = float(v_time_arr[idx])
-                if abs(nearest_beat - entry["time"]) < 0.1:  # 100ms以内
+                t = entry["time"]
+                idx = np.searchsorted(v_time_arr, t)
+                # Check the nearest of idx-1 and idx
+                candidates = []
+                if idx > 0:
+                    candidates.append(idx - 1)
+                if idx < len(v_time_arr):
+                    candidates.append(idx)
+                if not candidates:
+                    continue
+                best_idx = min(candidates, key=lambda j: abs(v_time_arr[j] - t))
+                nearest_beat = float(v_time_arr[best_idx])
+                if abs(nearest_beat - t) < 0.1:  # 100ms以内
                     old_time = entry["time"]
                     entry["time"] = round(nearest_beat, 3)
                     entry["duration"] = round(entry["duration"] + (old_time - nearest_beat), 3)
