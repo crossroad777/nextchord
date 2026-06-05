@@ -1452,7 +1452,12 @@ async def get_musicxml_content(session_id: str):
     xml_path = session_dir / "sheet.musicxml"
     
     if not xml_path.exists():
-        raise HTTPException(status_code=404, detail="MusicXML not generated")
+        try:
+            print(f"[{session_id}] MusicXML not found, generating on-demand...")
+            await regenerate_musicxml(session_id)
+        except Exception as e:
+            print(f"[{session_id}] Failed to generate MusicXML on-demand: {e}")
+            raise HTTPException(status_code=404, detail="MusicXML not generated")
         
     with open(xml_path, "r", encoding="utf-8") as f:
         content = f.read()
@@ -1472,7 +1477,12 @@ async def export_musicxml(session_id: str):
     xml_path = session_dir / "sheet.musicxml"
     
     if not xml_path.exists():
-        raise HTTPException(status_code=404, detail="MusicXML not generated")
+        try:
+            print(f"[{session_id}] MusicXML not found, generating on-demand...")
+            await regenerate_musicxml(session_id)
+        except Exception as e:
+            print(f"[{session_id}] Failed to generate MusicXML on-demand: {e}")
+            raise HTTPException(status_code=404, detail="MusicXML not generated")
         
     return FileResponse(xml_path, filename=f"nextchord_{session_id}.musicxml")
 

@@ -4,7 +4,7 @@
 import requests, time, json, sys
 
 API = "http://localhost:8000"
-WAV = r"D:\Music\nextchord\uploads\20260522-233134-499132ff\converted.wav"
+WAV = r"D:\Music\nextchord\uploads\20260604-005129-yt-e5eb6a\converted.wav"
 
 print("=== Uploading test file ===")
 with open(WAV, 'rb') as f:

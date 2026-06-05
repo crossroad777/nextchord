@@ -77,7 +77,10 @@ export function getChordFingering(chordName) {
     if (!chordName) return null;
     
     // Normalize simple things if needed, but for now exact match
-    let key = chordName;
+    let key = chordName
+        .replace(/(Maj7|maj7|major7)/g, 'M7')
+        .replace(/min7/g, 'm7');
+
     if (CHORD_DICTIONARY[key]) {
         return CHORD_DICTIONARY[key];
     }

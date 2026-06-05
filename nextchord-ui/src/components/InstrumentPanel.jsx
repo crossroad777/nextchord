@@ -170,9 +170,12 @@ const OPEND_CHORD_SHAPES = {
     "C#m": { name: "C#m", frets: [11, 11, 11, 10, 11, 11] },
 };
 
-// ─── Chord lookup with smart fallback ───
 function findChordShape(chordName, tuning = "standard") {
     if (!chordName || chordName === "N.C.") return null;
+
+    const normalizedName = chordName
+        .replace(/(Maj7|M7|major7)/g, 'maj7')
+        .replace(/min7/g, 'm7');
 
     let shape = null;
     const tuningDb = tuning === "dadgad" ? DADGAD_CHORD_SHAPES : 
@@ -181,7 +184,7 @@ function findChordShape(chordName, tuning = "standard") {
 
     // Helper for direct lookup and fallbacks in a specific database
     const lookupInDb = (db) => {
-        if (db[chordName]) return db[chordName];
+        if (db[normalizedName]) return db[normalizedName];
 
         const enharmonic = {
             "C#": "Db", "Db": "C#", "D#": "Eb", "Eb": "D#",
@@ -189,7 +192,7 @@ function findChordShape(chordName, tuning = "standard") {
             "A#": "Bb", "Bb": "A#",
         };
 
-        const match = chordName.match(/^([A-G][#b]?)(.*)$/);
+        const match = normalizedName.match(/^([A-G][#b]?)(.*)$/);
         if (!match) return null;
         const [, root, quality] = match;
 

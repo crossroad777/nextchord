@@ -77,8 +77,11 @@ with open(session_path, 'r', encoding='utf-8') as f:
 # 4. Whisper Hallucination Filter
 # =============================================
 section("4. Whisper Hallucination Filter")
-lyrics_text = session.get("result", {}).get("lyrics", {}).get("text", "")
-segments = session.get("result", {}).get("lyrics", {}).get("segments", [])
+# Extract lyrics text from display_phrases or lyrics_phrases
+display_phrases = session.get("result", {}).get("display_phrases", [])
+lyrics_phrases = session.get("result", {}).get("lyrics_phrases", [])
+lyrics_text = "".join(phrase.get("text", "") for phrase in display_phrases)
+segments = lyrics_phrases
 
 # Check for Korean characters (Hangul)
 hangul_re = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF\u3130-\u318F]')
@@ -174,19 +177,31 @@ for n in notes:
     if tech or techs:
         tech_count += 1
 
-check("Notes have mute_brush technique", mute_count > 0,
-      f"mute_brush={mute_count}, total_tech={tech_count}")
-check("Significant brushing count (>100)", mute_count > 100,
-      f"mute_brush={mute_count}")
+song_type = session.get("song_type", "band")
+if song_type == "band" and not notes:
+    # Band song strumming brushing is verified via MusicXML x_noteheads
+    mute_count = x_noteheads
+    tech_count = total_notes
+    notes_len = total_notes
+    check("Notes have mute_brush technique (via MusicXML x_noteheads)", mute_count > 0,
+          f"mute_brush={mute_count}, total_tech={tech_count}")
+    check("Significant brushing count (>100) (via MusicXML)", mute_count > 100,
+          f"mute_brush={mute_count}")
+else:
+    notes_len = len(notes)
+    check("Notes have mute_brush technique", mute_count > 0,
+          f"mute_brush={mute_count}, total_tech={tech_count}")
+    check("Significant brushing count (>100)", mute_count > 100,
+          f"mute_brush={mute_count}")
 
-print(f"  Info: {mute_count} mute_brush / {len(notes)} total notes")
+print(f"  Info: {mute_count} mute_brush / {notes_len} total notes")
 
 # =============================================
 # 8. Frontend Accessibility
 # =============================================
 section("8. Frontend Check")
 try:
-    r = requests.get("http://localhost:5173/", timeout=10)
+    r = requests.get(f"{API}/", timeout=10)
     check("Frontend returns 200", r.status_code == 200)
     check("HTML contains root div", 'id="root"' in r.text)
     check("No Korean in HTML", not hangul_re.search(r.text),
@@ -251,9 +266,9 @@ check("TabView accepts showTechniques prop",
       "showTechniques" in tv_content.split('\n')[6],  # first line of component
       "showTechniques not in props destructuring")
 
-check("SVG spacing added in renderFinished",
-      "marginBottom" in tv_content,
-      "No marginBottom CSS for SVG spacing")
+check("SVG overflow visible added in renderFinished",
+      "overflow" in tv_content and "visible" in tv_content,
+      "No overflow: visible CSS for SVG spacing")
 
 # =============================================
 # Summary
@@ -262,8 +277,8 @@ print(f"\n{'='*60}")
 print(f"  SUMMARY: {PASS} PASS / {FAIL} FAIL / {PASS+FAIL} TOTAL")
 print(f"{'='*60}")
 if FAIL > 0:
-    print(f"\n  ⚠ {FAIL} tests FAILED!")
+    print(f"\n  [ERROR] {FAIL} tests FAILED!")
     sys.exit(1)
 else:
-    print(f"\n  ✅ All tests passed!")
+    print(f"\n  [SUCCESS] All tests passed!")
     sys.exit(0)

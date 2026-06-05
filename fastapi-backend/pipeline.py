@@ -752,7 +752,6 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         else:
                             # openai-whisper API
                             import torch as _torch
-                            import gc
                             opts = dict(
                                 language="ja",
                                 word_timestamps=True,
