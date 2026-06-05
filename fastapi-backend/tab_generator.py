@@ -16,7 +16,7 @@ import math
 import json
 import numpy as np
 from typing import List, Dict, Optional, Tuple
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring, indent
 from xml.dom import minidom
 
 # =========================================================================
@@ -902,12 +902,12 @@ def notes_to_musicxml(
                     measure_duration, measure_total_divs, tuning, beats
                 )
 
-    # Final XML
+    # Final XML (optimized with native ElementTree.indent)
+    indent(score, space="  ")
     rough = tostring(score, encoding="unicode")
-    dom = minidom.parseString(rough)
     xml_decl = '<?xml version="1.0" encoding="UTF-8"?>\n'
     doctype = '<!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">\n'
-    return xml_decl + doctype + dom.documentElement.toprettyxml(indent="  ")
+    return xml_decl + doctype + rough
 
 
 def _insert_harmony_element(measure, c_name, offset_divs=None):

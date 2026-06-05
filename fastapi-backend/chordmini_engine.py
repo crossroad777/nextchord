@@ -34,9 +34,18 @@ class ChordMiniEngine:
         self._loaded = False
     
     def load(self):
-        if self._loaded:
-            return
-        
+        if self.model is not None:
+            # Model is already loaded in memory, just move back to the target device
+            try:
+                self.model.to(self.device)
+                self.model.eval()
+                self._loaded = True
+                print(f"[ChordMini] Model moved back to {self.device}")
+                return
+            except Exception as e:
+                print(f"[ChordMini] Failed to move model back to device: {e}, will reload")
+                self.model = None
+
         from src.utils.hparams import HParams
         from src.models import load_model
         from src.evaluation.utils.common import extract_norm_stats, extract_vocab
@@ -66,19 +75,18 @@ class ChordMiniEngine:
         print(f"[ChordMini] Model loaded on {self.device}, vocab={len(self.idx_to_chord)}")
     
     def unload(self):
-        """GPU VRAM を解放する（モデルをCPUに移動 + キャッシュクリア）"""
+        """GPU VRAM を解放する（モデルをCPUに移動 + キャッシュクリア。モデル自体はメモリに保持）"""
         if self.model is not None:
             try:
                 self.model.cpu()
-            except Exception:
-                pass
-        import gc
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-        self._loaded = False
-        self.model = None
-        print("[ChordMini] Model unloaded, VRAM freed")
+                import gc
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                self._loaded = False
+                print("[ChordMini] Model offloaded to CPU, VRAM freed")
+            except Exception as e:
+                print(f"[ChordMini] Failed to offload model to CPU: {e}")
     
     def detect_chords(self, wav_path):
         """
@@ -111,10 +119,11 @@ class ChordMiniEngine:
             n_classes=len(self.chord_to_idx),
         )
         
-        # フレーム予測 → セグメントに変換
+        # フレーム予測 → セグメントに変換 (btc_engine.py と整合)
         seg_starts = []
         seg_labels = []
         prev_chord = None
+        prev_start = 0.0
         
         for i, idx in enumerate(preds):
             chord = self.idx_to_chord.get(int(idx), 'N')
@@ -122,24 +131,26 @@ class ChordMiniEngine:
             
             if prev_chord is None:
                 prev_chord = chord
-                seg_starts.append(0.0)
+                prev_start = t
                 continue
             
             if chord != prev_chord:
-                seg_starts.append(t)
+                seg_starts.append(prev_start)
                 seg_labels.append(prev_chord)
+                prev_start = t
                 prev_chord = chord
         
         # 最後のセグメント
         if prev_chord is not None:
+            seg_starts.append(prev_start)
             seg_labels.append(prev_chord)
-
+ 
         # タイミング補正: BTC系モデルは約0.4秒遅れてコード変化を検出する
         TIMING_OFFSET = 0.40
         seg_starts_arr = np.array(seg_starts, dtype=float)
         seg_starts_arr = np.maximum(0.0, seg_starts_arr - TIMING_OFFSET)
         print(f'[ChordMini] {len(seg_labels)} chord segments, timing correction -{TIMING_OFFSET}s applied')
-
+ 
         return seg_starts_arr, np.array(seg_labels)
 
 

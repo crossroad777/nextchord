@@ -196,6 +196,7 @@ _INTERVAL_WEIGHTS = {
 }
 
 
+@lru_cache(maxsize=256)
 def _build_chord_template(pitch_classes, root_pc=None):
     """Build a weighted ideal chroma template for a chord.
 
@@ -412,6 +413,7 @@ def multi_evidence_chord_vote(
 # コード検証・補正
 # ===================================================================
 
+@lru_cache(maxsize=24)
 def _get_diatonic_chords(key_name):
     """キーのダイアトニックコード + よく使う借用和音を返す"""
     from music21 import key as m21key

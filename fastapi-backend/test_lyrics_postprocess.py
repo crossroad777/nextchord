@@ -166,7 +166,7 @@ class TestCleanHallucinatedEndings:
     def test_removes_mv(self):
         """MV/PV表記を除去"""
         phrases = [
-            {"text": "歌詞", "start": 0.0, "end": 1.0},
+            {"text": "さくらの花", "start": 0.0, "end": 1.0},
             {"text": "Music Video", "start": 5.0, "end": 6.0},
         ]
         result = clean_hallucinated_endings(phrases)
@@ -175,7 +175,7 @@ class TestCleanHallucinatedEndings:
     def test_removes_empty(self):
         """空テキストフレーズを除去"""
         phrases = [
-            {"text": "歌詞", "start": 0.0, "end": 1.0},
+            {"text": "さくらの花", "start": 0.0, "end": 1.0},
             {"text": "   ", "start": 5.0, "end": 6.0},
         ]
         result = clean_hallucinated_endings(phrases)

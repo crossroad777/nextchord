@@ -1485,18 +1485,25 @@ async def get_file(session_id: str, filename: str):
     
     session_dir = Path(sessions[session_id]["session_dir"])
     
+    # Sanitize filename to prevent path traversal
+    safe_filename = os.path.basename(filename)
+    file_path = (session_dir / safe_filename).resolve()
+    
+    # Verify that the resolved file path is inside session_dir
+    session_dir_resolved = session_dir.resolve()
+    if not str(file_path).startswith(str(session_dir_resolved)):
+        raise HTTPException(status_code=403, detail="Access denied")
+    
     # ブラウザOOM防止: converted.wav を要求された場合、playback.mp3 があればそちらを返す
-    if filename == "converted.wav":
+    if safe_filename == "converted.wav":
         mp3_path = session_dir / "playback.mp3"
         if mp3_path.exists():
             return FileResponse(mp3_path, filename="playback.mp3", media_type="audio/mpeg")
     
-    file_path = session_dir / filename
-    
-    if not file_path.exists():
+    if not file_path.exists() or not file_path.is_file():
         raise HTTPException(status_code=404, detail="ファイルが見つかりません")
     
-    return FileResponse(file_path, filename=filename)
+    return FileResponse(file_path, filename=safe_filename)
 
 
 # ------------------------------------------------------------------

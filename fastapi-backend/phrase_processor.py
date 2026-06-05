@@ -205,7 +205,12 @@ def process_phrases_for_display(phrases: list[dict], target_chars: int = 30,
             cur = dict(p)
     
     result.append(cur)
-    return result
+    
+    # 4小節分割または文字数分割を実行
+    if bar_positions and len(bar_positions) >= 2:
+        return _split_blocks_by_bars(result, bar_positions, bars_per_line)
+    else:
+        return _split_blocks_by_chars(result, target_chars)
 
 
 def _split_blocks_by_bars(blocks: list[dict], bar_positions: list[float],

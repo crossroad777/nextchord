@@ -104,7 +104,7 @@ class TestNormalizeChordsToKey:
         """シャープ系キーではフラット->シャープに変換"""
         chords = ["Db", "Eb", "Gb", "Ab", "Bb"]
         result = _normalize_chords_to_key(chords, "D major")
-        assert "C#" in result
+        assert "C#dim" in result
         assert "D#" in result or "Eb" not in result  # Ebは変換されるべき
     
     def test_enharmonic_flat_key(self):

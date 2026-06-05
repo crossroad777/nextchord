@@ -24,7 +24,7 @@ def postprocess_japanese_lyrics(text: str) -> str:
 
     # === 2. 不要な空白の除去 ===
     # 日本語文字間の不要なスペースを除去（英単語間のスペースは保持）
-    result = re.sub(r'(?<=[ぁ-んァ-ヶー一-])\s+(?=[ぁ-んァ-ヶー一-])', '', result)
+    result = re.sub(r'(?<=[ぁ-んァ-ヶー\u4e00-\u9fff])\s+(?=[ぁ-んァ-ヶー\u4e00-\u9fff])', '', result)
 
     # === 3. Whisperのよくある誤認識パターン修正 ===
     _corrections = {

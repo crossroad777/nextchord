@@ -49,8 +49,8 @@ class MadmomChordEngine:
             import os
             y, sr = librosa.load(wav_path, sr=44100, mono=True,
                                  duration=MAX_DURATION)
-            truncated_path = os.path.join(
-                tempfile.gettempdir(), '_madmom_truncated.wav')
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                truncated_path = tmp.name
             sf.write(truncated_path, y, sr)
             process_path = truncated_path
             print(f"[MadmomChord] Truncated to {MAX_DURATION}s "

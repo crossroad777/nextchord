@@ -137,35 +137,23 @@ class TestCreateTextScore:
     """テキストスコア生成のテスト"""
 
     def test_basic(self):
-        data = [
-            {"bar": 1, "beat": 1, "chord": "C", "lyric": "Hello", "time": 0.0, "duration": 0.5, "section": ""},
-            {"bar": 1, "beat": 2, "chord": "G", "lyric": "World", "time": 0.5, "duration": 0.5, "section": ""},
-            {"bar": 1, "beat": 3, "chord": "Am", "lyric": "", "time": 1.0, "duration": 0.5, "section": ""},
-            {"bar": 1, "beat": 4, "chord": "F", "lyric": "", "time": 1.5, "duration": 0.5, "section": ""},
-        ]
+        data = "[C]Hello [G]World\n[Am]\n[F]"
         result = create_text_score(data)
         assert isinstance(result, str)
         assert len(result) > 0
         assert "C" in result
 
     def test_empty_data(self):
-        result = create_text_score([])
+        result = create_text_score("")
         assert isinstance(result, str)
 
     def test_nc_only(self):
-        data = [
-            {"bar": 1, "beat": 1, "chord": "N.C.", "lyric": "", "time": 0.0, "duration": 0.5, "section": ""},
-        ]
+        data = "[N.C.]"
         result = create_text_score(data)
         assert isinstance(result, str)
 
     def test_japanese_lyrics(self):
-        data = [
-            {"bar": 1, "beat": 1, "chord": "C", "lyric": "さくら", "time": 0.0, "duration": 0.5, "section": ""},
-            {"bar": 1, "beat": 2, "chord": "Am", "lyric": "の花", "time": 0.5, "duration": 0.5, "section": ""},
-            {"bar": 1, "beat": 3, "chord": "F", "lyric": "", "time": 1.0, "duration": 0.5, "section": ""},
-            {"bar": 1, "beat": 4, "chord": "G", "lyric": "", "time": 1.5, "duration": 0.5, "section": ""},
-        ]
+        data = "[C]さくら [Am]の花\n[F]\n[G]"
         result = create_text_score(data)
         assert "さくら" in result or "C" in result
 

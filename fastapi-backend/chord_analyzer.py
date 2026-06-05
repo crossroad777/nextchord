@@ -210,22 +210,37 @@ def get_bass_roots(
         y, sr = librosa.load(bass_wav, sr=22050, mono=True)
         roots = {}
         
+        fmin = librosa.note_to_hz('B1')  # ~61Hz
+        fmax = librosa.note_to_hz('B3')  # ~247Hz
+        hop_length = 512
+        
+        # 全体に対して一度だけ pyin を実行 (劇的な速度改善)
+        print(f"[Bass] Running pyin on full audio ({len(y)/sr:.1f}s)...")
+        f0, voiced, _ = librosa.pyin(
+            y, sr=sr,
+            fmin=fmin,
+            fmax=fmax,
+            hop_length=hop_length
+        )
+        
         for i, t in enumerate(beat_times):
             t_end = beat_times[i + 1] if i + 1 < len(beat_times) else t + 0.6
-            start_sample = int(t * sr)
-            end_sample   = int(t_end * sr)
-            segment = y[start_sample:end_sample]
             
-            if len(segment) < 512:
+            # ビート範囲に対応するフレーム範囲を計算
+            start_frame = int(round(t * sr / hop_length))
+            end_frame   = int(round(t_end * sr / hop_length))
+            
+            # 範囲外チェック
+            if start_frame >= len(f0):
                 continue
+            end_frame = min(end_frame, len(f0))
+            if end_frame - start_frame < 1:
+                continue
+                
+            segment_f0 = f0[start_frame:end_frame]
+            segment_voiced = voiced[start_frame:end_frame]
             
-            # 基音検出 (yin/pyin)
-            f0, voiced, _ = librosa.pyin(
-                segment, sr=sr,
-                fmin=librosa.note_to_hz('B1'),  # ~61Hz
-                fmax=librosa.note_to_hz('B3'),  # ~247Hz
-            )
-            valid_f0 = f0[voiced & ~np.isnan(f0)]
+            valid_f0 = segment_f0[segment_voiced & ~np.isnan(segment_f0)]
             if len(valid_f0) == 0:
                 continue
             
@@ -234,6 +249,7 @@ def get_bass_roots(
             root_pc = midi_num % 12
             roots[t] = NOTE_NAMES[root_pc]
         
+        print(f"[Bass] Root detection completed. Estimated roots for {len(roots)} beats.")
         return roots
     except Exception as e:
         print(f'[Bass] Root detection failed: {e}')

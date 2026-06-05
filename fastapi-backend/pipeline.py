@@ -751,32 +751,29 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             )
                         else:
                             # openai-whisper API
-                            pass
-                
-                if not use_groq and not _is_faster:
-                    # openai-whisper API
-                    import torch as _torch
-                    opts = dict(
-                        language="ja",
-                        word_timestamps=True,
-                        initial_prompt="歌",
-                        condition_on_previous_text=False,
-                        no_speech_threshold=0.4,
-                        fp16=_torch.cuda.is_available(),
-                    )
-                    try:
-                        return model.transcribe(str(wav), **opts)
-                    except RuntimeError as e:
-                        print(f"[{sid}] [WHISPER] [WARN] RuntimeError: {e}, retrying...")
-                        if _torch.cuda.is_available():
-                            _torch.cuda.empty_cache()
-                        return model.transcribe(str(wav), **opts)
-                    finally:
-                        # openai-whisper完了後にVRAM解放
-                        gc.collect()
-                        if _torch.cuda.is_available():
-                            _torch.cuda.empty_cache()
-                            print(f"[{sid}] [WHISPER] VRAM cache cleared")
+                            import torch as _torch
+                            import gc
+                            opts = dict(
+                                language="ja",
+                                word_timestamps=True,
+                                initial_prompt="歌",
+                                condition_on_previous_text=False,
+                                no_speech_threshold=0.4,
+                                fp16=_torch.cuda.is_available(),
+                            )
+                            try:
+                                return model.transcribe(str(wav), **opts)
+                            except RuntimeError as e:
+                                print(f"[{sid}] [WHISPER] [WARN] RuntimeError: {e}, retrying...")
+                                if _torch.cuda.is_available():
+                                    _torch.cuda.empty_cache()
+                                return model.transcribe(str(wav), **opts)
+                            finally:
+                                # openai-whisper完了後にVRAM解放
+                                gc.collect()
+                                if _torch.cuda.is_available():
+                                    _torch.cuda.empty_cache()
+                                    print(f"[{sid}] [WHISPER] VRAM cache cleared")
                 
                 # --- Groq または faster-whisper の場合の共通処理 ---
                 try:

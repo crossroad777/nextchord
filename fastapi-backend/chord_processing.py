@@ -144,21 +144,34 @@ def _beat_majority_chords(v_time, seg_starts, seg_labels):
     -------
     list of str : 各ビートに対応するクリーンなコード名
     """
-    if seg_starts is None or seg_labels is None or len(v_time) == 0:
+    if seg_starts is None or seg_labels is None or len(v_time) == 0 or len(seg_starts) == 0:
         return ["N.C."] * len(v_time)
+    
+    # 検索高速化のために numpy 配列にする
+    seg_starts = np.asarray(seg_starts, dtype=float)
+    seg_labels = np.asarray(seg_labels, dtype=object)
+    
+    # 各セグメントの終了時刻を事前定義
+    # 最後のセグメントは十分長い時間まで続くとする
+    seg_ends = np.append(seg_starts[1:], v_time[-1] + 10.0)
     
     beat_chords = []
     
     for i, b_time in enumerate(v_time):
-        # このビートの時間範囲
         next_b_time = v_time[i + 1] if i < len(v_time) - 1 else b_time + 0.5
         
-        # この区間内のコードセグメントを収集
+        # バイナリサーチでオーバーラップするセグメント範囲 [idx_start, idx_end) を絞り込む
+        # O(M) -> O(log M)
+        idx_start = int(np.searchsorted(seg_ends, b_time))
+        idx_end = int(np.searchsorted(seg_starts, next_b_time))
+        
         chord_durations = Counter()
         
-        for j in range(len(seg_starts)):
+        for j in range(idx_start, idx_end):
+            if j < 0 or j >= len(seg_starts):
+                continue
             seg_start = seg_starts[j]
-            seg_end = seg_starts[j + 1] if j + 1 < len(seg_starts) else next_b_time + 1.0
+            seg_end = seg_ends[j]
             
             # オーバーラップ計算
             overlap_start = max(b_time, seg_start)
@@ -172,12 +185,11 @@ def _beat_majority_chords(v_time, seg_starts, seg_labels):
                     chord_durations[chord_name] += overlap
         
         if chord_durations:
-            # 最も長い時間を占めるコードを選択
             best_chord = chord_durations.most_common(1)[0][0]
             beat_chords.append(best_chord)
         else:
             beat_chords.append("N.C.")
-    
+            
     return beat_chords
 
 
