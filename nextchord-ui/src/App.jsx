@@ -255,6 +255,21 @@ export default function NextChordApp() {
               : <Moon size={16} className="text-[var(--nc-text-secondary)] group-hover:text-indigo-400 transition-colors" />
             }
           </button>
+
+          {/* Server Settings */}
+          <button
+            onClick={() => {
+              setTempApiUrl(localStorage.getItem('nextchord-api-base') || "");
+              setTempYtCookies(localStorage.getItem('nextchord-yt-cookies') || "");
+              setShowSettings(true);
+            }}
+            className="w-9 h-9 rounded-lg flex items-center justify-center transition-all hover:bg-[var(--nc-surface-2)] group"
+            title="サーバー設定"
+            aria-label="Server Settings"
+            style={{ border: '1px solid var(--nc-border)' }}
+          >
+            <Settings size={16} className="text-[var(--nc-text-secondary)] group-hover:text-indigo-400 transition-colors" />
+          </button>
           <input ref={app.fileInputRef} id="nc-file-upload" name="audio-file" type="file" onChange={app.handleUpload} className="hidden" accept="audio/*" />
         </div>
       </header>
