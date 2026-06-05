@@ -18,6 +18,7 @@ export default function NextChordApp() {
   const app = useNextChord();
   const [showSettings, setShowSettings] = useState(false);
   const [tempApiUrl, setTempApiUrl] = useState(() => localStorage.getItem('nextchord-api-base') || "");
+  const [tempYtCookies, setTempYtCookies] = useState(() => localStorage.getItem('nextchord-yt-cookies') || "");
 
   // ChordPro行タイミング: バックエンドで計算済みのデータを優先使用
   const chordproLineTimings = useMemo(() => {
@@ -283,6 +284,7 @@ export default function NextChordApp() {
               showToast={app.showToast}
               onOpenSettings={() => {
                 setTempApiUrl(localStorage.getItem('nextchord-api-base') || "");
+                setTempYtCookies(localStorage.getItem('nextchord-yt-cookies') || "");
                 setShowSettings(true);
               }}
             />
@@ -395,7 +397,7 @@ export default function NextChordApp() {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in p-4">
           <div className="bg-[var(--nc-surface)] border border-[var(--nc-border)] p-6 rounded-2xl shadow-xl w-full max-w-md" onClick={e => e.stopPropagation()}>
             <h2 className="text-xl font-bold mb-4 flex items-center gap-2"><Settings className="text-[var(--nc-primary)]"/> サーバー設定</h2>
-            <div className="mb-6">
+            <div className="mb-4">
               <label className="block text-sm font-bold text-[var(--nc-text-muted)] mb-2">API Base URL (Google Colab / Local)</label>
               <input 
                 type="text" 
@@ -404,8 +406,21 @@ export default function NextChordApp() {
                 className="w-full px-4 py-3 rounded-xl bg-[var(--nc-surface-2)] border border-[var(--nc-border)] text-[var(--nc-text)] focus:outline-none focus:border-[var(--nc-primary)] transition-all"
                 placeholder="https://xxxxx.loca.lt"
               />
-              <p className="text-xs text-[var(--nc-text-ghost)] mt-2 leading-relaxed">
-                Google Colab等で発行されたバックエンドURLを入力してください。空欄にするとデフォルトのローカルホストまたは環境変数のURLが使われます。
+              <p className="text-xs text-[var(--nc-text-ghost)] mt-1.5 leading-relaxed">
+                Google Colab等で発行されたバックエンドURLを入力してください。空欄にすると環境変数のURLが使われます。
+              </p>
+            </div>
+            <div className="mb-6">
+              <label className="block text-sm font-bold text-[var(--nc-text-muted)] mb-2">YouTube クッキー (Netscape形式のテキスト)</label>
+              <textarea 
+                value={tempYtCookies} 
+                onChange={(e) => setTempYtCookies(e.target.value)} 
+                className="w-full h-28 px-4 py-3 rounded-xl bg-[var(--nc-surface-2)] border border-[var(--nc-border)] text-[var(--nc-text)] focus:outline-none focus:border-[var(--nc-primary)] transition-all font-mono text-xs custom-scrollbar"
+                placeholder="# Netscape HTTP Cookie File&#10;.youtube.com&#9;TRUE&#9;/&#9;TRUE&#9;1780000000&#9;__Secure-3PSID&#9;xxx..."
+                spellCheck={false}
+              />
+              <p className="text-xs text-[var(--nc-text-ghost)] mt-1.5 leading-relaxed">
+                YouTubeでボット検出エラーになる場合、ブラウザ拡張（例: Get cookies.txt）等でクッキーを書き出し、貼り付けてください。
               </p>
             </div>
             <div className="flex justify-end gap-2">
@@ -416,6 +431,11 @@ export default function NextChordApp() {
                     localStorage.setItem('nextchord-api-base', tempApiUrl.trim());
                   } else {
                     localStorage.removeItem('nextchord-api-base');
+                  }
+                  if (tempYtCookies.trim()) {
+                    localStorage.setItem('nextchord-yt-cookies', tempYtCookies.trim());
+                  } else {
+                    localStorage.removeItem('nextchord-yt-cookies');
                   }
                   setShowSettings(false);
                   app.showToast("設定を保存しました");

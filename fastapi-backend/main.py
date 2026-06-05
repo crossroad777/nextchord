@@ -467,6 +467,7 @@ class ResultResponse(BaseModel):
 
 class YouTubeRequest(BaseModel):
     url: str
+    cookies: Optional[str] = None
 
 # =========================================================================
 # コード処理・キー推定 (chord_processing.py に分離)
@@ -575,13 +576,14 @@ async def upload_audio(background_tasks: BackgroundTasks, file: UploadFile = Fil
         audio_url=f"/files/{session_id}/converted.wav"
     )
 
-def download_youtube_audio(url: str, output_dir: Path) -> tuple:
+def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional[str] = None) -> tuple:
     """Download audio from YouTube using yt-dlp. Returns (audio_path, metadata_dict)."""
     import os
     import tempfile
     
     proxy = os.getenv("YOUTUBE_PROXY")
-    cookies_content = os.getenv("YOUTUBE_COOKIES")
+    if not cookies_content or len(cookies_content.strip()) == 0:
+        cookies_content = os.getenv("YOUTUBE_COOKIES")
     
     cookies_file = None
     if cookies_content and len(cookies_content.strip()) > 0:
@@ -712,7 +714,7 @@ async def upload_youtube(background_tasks: BackgroundTasks, request: YouTubeRequ
     def process_youtube():
         try:
             # 1. YouTubeからダウンロード（メタデータも取得）
-            audio_path, yt_meta = download_youtube_audio(url, session_dir)
+            audio_path, yt_meta = download_youtube_audio(url, session_dir, request.cookies)
             sessions[session_id]["filename"] = yt_meta["title"]
             sessions[session_id]["artist"] = yt_meta.get("artist", "")
             save_session(session_id)

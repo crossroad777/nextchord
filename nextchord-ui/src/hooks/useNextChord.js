@@ -605,7 +605,10 @@ export function useNextChord() {
       const res = await fetch(`${getApiBase()}/upload/youtube`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: urlToUse })
+        body: JSON.stringify({ 
+          url: urlToUse,
+          cookies: localStorage.getItem('nextchord-yt-cookies') || ""
+        })
       });
       if (!res.ok) throw new Error("YouTube upload failed");
       const data = await res.json();

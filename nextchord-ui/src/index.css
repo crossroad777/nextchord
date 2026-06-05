@@ -2310,7 +2310,7 @@ button:active:not(:disabled),
   display: block;
   color: var(--nc-text);
   line-height: 1.5;
-  white-space: pre-wrap;
+  white-space: nowrap;
   font-family: 'Noto Sans JP', 'Inter', sans-serif;
 }
 
