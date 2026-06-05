@@ -22,7 +22,12 @@ RUN apt-get update && apt-get install -y \
     libsndfile1 \
     build-essential \
     git \
-    nodejs \
+    curl \
+    unzip \
+    && curl -fsSL https://deno.land/install.sh | sh \
+    && mv /root/.deno/bin/deno /usr/bin/deno \
+    && apt-get purge -y curl unzip \
+    && apt-get autoremove -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

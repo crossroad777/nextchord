@@ -209,21 +209,15 @@ whisper_model = None
 async def lifespan(app: FastAPI):
     global beat_processor, beat_tracker, key_processor, chroma_processor, chord_processor, whisper_model
     print("Loading AI Models (Beats, Key, Chords, Whisper)...")
-    print("Checking node environment...")
+    print("Checking deno environment...")
     import shutil
     import subprocess
-    print("shutil.which('node'):", shutil.which("node"))
-    print("shutil.which('nodejs'):", shutil.which("nodejs"))
+    print("shutil.which('deno'):", shutil.which("deno"))
     try:
-        r = subprocess.run(["node", "-v"], capture_output=True, text=True)
-        print("node -v stdout:", r.stdout.strip(), "stderr:", r.stderr.strip(), "code:", r.returncode)
+        r = subprocess.run(["deno", "--version"], capture_output=True, text=True)
+        print("deno --version stdout:", r.stdout.strip(), "stderr:", r.stderr.strip(), "code:", r.returncode)
     except Exception as e:
-        print("Failed to run node:", e)
-    try:
-        r = subprocess.run(["nodejs", "-v"], capture_output=True, text=True)
-        print("nodejs -v stdout:", r.stdout.strip(), "stderr:", r.stderr.strip(), "code:", r.returncode)
-    except Exception as e:
-        print("Failed to run nodejs:", e)
+        print("Failed to run deno:", e)
     try:
         # Load madmom models
         if RNNBeatProcessor:
@@ -623,7 +617,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                 "--no-check-certificates", 
                 "--legacy-server-connect", 
                 "--impersonate", "chrome",
-                "--js-runtimes", "node:/usr/bin/node",
+                "--js-runtimes", "deno:/usr/bin/deno",
                 "--print", "%(title)s\n%(artist,uploader)s"
             ]
             if proxy:
@@ -656,7 +650,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             "--no-check-certificates",
             "--legacy-server-connect",
             "--impersonate", "chrome",
-            "--js-runtimes", "node:/usr/bin/node",
+            "--js-runtimes", "deno:/usr/bin/deno",
             "-f", "bestaudio/best",
             "-x",
             "--audio-format", "wav",
@@ -682,7 +676,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
                     "--no-check-certificates",
                     "--legacy-server-connect",
                     "--impersonate", "chrome",
-                    "--js-runtimes", "node:/usr/bin/node",
+                    "--js-runtimes", "deno:/usr/bin/deno",
                     "-F"
                 ]
                 if proxy:
