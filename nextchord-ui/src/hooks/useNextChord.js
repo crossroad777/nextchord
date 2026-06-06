@@ -242,7 +242,7 @@ export function useNextChord() {
         audioUrl: null,  // OOM防止: 最初はnull
         hasNotes: result.has_notes
       });
-      setTabSource(result.tab_source || "chord_strum");
+      setTabSource("chord_strum");
       setSongType(result.song_type || "band");
       setStatus(STATUS.COMPLETED);
 
@@ -376,7 +376,7 @@ export function useNextChord() {
         fileName: result.filename || prev?.fileName,
         artist: result.artist || prev?.artist
       }));
-      setTabSource(result.tab_source || "chord_strum");
+      setTabSource("chord_strum");
       setSongType(result.song_type || "band");
       setStatus(STATUS.COMPLETED);
 
@@ -894,8 +894,7 @@ export function useNextChord() {
   };
 
   const handleTabSourceChange = (newTabSource) => {
-    setTabSource(newTabSource);
-    handleRetune(tuning, capo, noiseGate, newTabSource);
+    // 譜面タイプ切り替え機能不要のため無効化
   };
 
 

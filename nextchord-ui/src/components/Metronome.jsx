@@ -1,5 +1,26 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 
+const MetronomeIcon = ({ size = 16, className = "" }) => (
+  <svg 
+    viewBox="0 0 24 24" 
+    width={size} 
+    height={size} 
+    stroke="currentColor" 
+    strokeWidth="2.5" 
+    fill="none" 
+    strokeLinecap="round" 
+    strokeLinejoin="round"
+    className={className}
+    style={{ display: 'inline-block', verticalAlign: 'middle' }}
+  >
+    <path d="M12 2L5 22h14L12 2z" />
+    <path d="M12 5v12" />
+    <circle cx="12" cy="17" r="1.5" fill="currentColor" />
+    <path d="M12 17l4-9" />
+    <circle cx="16" cy="8" r="1" fill="currentColor" />
+  </svg>
+);
+
 /**
  * Metronome — Web Audio APIベースの高精度メトロノーム
  * 
@@ -102,33 +123,33 @@ export function Metronome({ bpm = 120, beatsPerBar = 4, isPlaying = false }) {
                 onClick={toggle}
                 title={active ? 'メトロノーム停止' : 'メトロノーム開始'}
             >
-                <span className="metronome-icon">🎵</span>
+                <span className="metronome-icon" style={{ display: 'flex', alignItems: 'center' }}>
+                    <MetronomeIcon size={16} />
+                </span>
                 <span className="metronome-label">
                     {active ? 'ON' : 'OFF'}
                 </span>
             </button>
-            {active && (
-                <div className="metronome-display">
-                    <div className="metronome-beats">
-                        {Array.from({ length: beatsPerBar }, (_, i) => (
-                            <span
-                                key={i}
-                                className={`metronome-dot ${i === currentBeat ? 'metronome-dot-active' : ''} ${i === 0 ? 'metronome-dot-accent' : ''}`}
-                            />
-                        ))}
-                    </div>
-                    <input
-                        type="range"
-                        className="metronome-volume"
-                        min="0"
-                        max="1"
-                        step="0.1"
-                        value={metronomeVolume}
-                        onChange={e => handleVolumeChange(parseFloat(e.target.value))}
-                        title={`音量: ${Math.round(metronomeVolume * 100)}%`}
-                    />
+            <div className="metronome-display">
+                <div className="metronome-beats">
+                    {Array.from({ length: beatsPerBar }, (_, i) => (
+                        <span
+                            key={i}
+                            className={`metronome-dot ${active && i === currentBeat ? 'metronome-dot-active' : ''} ${i === 0 ? 'metronome-dot-accent' : ''}`}
+                        />
+                    ))}
                 </div>
-            )}
+                <input
+                    type="range"
+                    className="metronome-volume"
+                    min="0"
+                    max="1"
+                    step="0.1"
+                    value={metronomeVolume}
+                    onChange={e => handleVolumeChange(parseFloat(e.target.value))}
+                    title={`音量: ${Math.round(metronomeVolume * 100)}%`}
+                />
+            </div>
         </div>
     );
 }

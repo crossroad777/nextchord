@@ -402,8 +402,13 @@ def _normalize_chords_to_key(beat_chords, key_name):
         for chord, count in chord_counts_pre.items():
             if chord in diatonic_set or count > 3:  # 4回以上出現 = 意図的な非ダイアトニック
                 continue
-            root = _chord_root(chord)
+            
+            # dim, m6, m7b5, aug などの特徴的なクオリティを持つコードはダイアトニック補正から保護する
             quality = _chord_quality(chord)
+            if any(q in quality for q in ['dim', 'm6', 'm7b5', 'aug']):
+                continue
+                
+            root = _chord_root(chord)
             # 同ルートでダイアトニックなコードを探す
             for dc in diatonic_set:
                 if _chord_root(dc) == root and dc != chord:
@@ -439,8 +444,8 @@ def _normalize_chords_to_key(beat_chords, key_name):
             return False
         # 7th → triad は許可 (Am7→Am, C7→C, Cmaj7→C)
         # sus → triad は許可 (Csus4→C)
-        # dim/aug → triad は禁止（性格が大きく変わる）
-        if 'dim' in q1 or 'dim' in q2 or 'aug' in q1 or 'aug' in q2:
+        # dim/aug/m6/m7b5 → triad は禁止（性格が大きく変わるため保護）
+        if any(q in q1 or q in q2 for q in ['dim', 'aug', 'm6', 'm7b5']):
             return False
         return True
     

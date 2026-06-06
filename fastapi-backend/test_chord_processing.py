@@ -137,6 +137,20 @@ class TestNormalizeChordsToKey:
         # テストの意図: 関数がクラッシュしないことを確認
         assert len(result) == 11
 
+    def test_protect_special_qualities(self):
+        """dim, m6, m7b5, aug などの特徴的なクオリティがダイアトニック補正やレアコード統合で消されないことを確認"""
+        # キーが C major (ダイアトニックに Ddim や Fm6 は含まれない)
+        # 通常なら Ddim は Dm に、Fm6 は F に強制変換される。また、Fm6はFmに統合される。
+        # 特徴的なクオリティを保護したため、これらはそのまま残るはず。
+        # 1拍だけのチャタリングと判定されないよう、各コードを2回（2拍分）連続して並べる
+        chords = ["C", "C", "Ddim", "Ddim", "C", "C", "Fm6", "Fm6", "C"]
+        result = _normalize_chords_to_key(chords, "C major")
+        assert "Ddim" in result
+        assert "Fm6" in result
+        # また、少数の Ddim/Fm6 が他のコードに統合されて消えないことを確認
+        assert result[2] == "Ddim"
+        assert result[6] == "Fm6"
+
 
 # =========================================================================
 # _smooth_chord_segments

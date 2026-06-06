@@ -227,21 +227,7 @@ export function ResultHeader({
           <span className="nc-ribbon-label">チューニング</span>
         </div>
 
-        {/* Tab Source Dropdown */}
-        {session?.hasNotes && (
-          <div className="nc-ribbon-item">
-            <select
-              value={tabSource || 'chord_strum'}
-              onChange={(e) => handleTabSourceChange(e.target.value)}
-              className="text-[11px] font-black text-[var(--gf-text)] bg-[var(--gf-surface-2)] border border-[var(--gf-border)] rounded-lg px-2 py-1 mb-1 cursor-pointer focus:outline-none focus:border-[var(--gf-amber)] appearance-none"
-              style={{ minWidth: '100px' }}
-            >
-              <option value="chord_strum">コード伴奏</option>
-              <option value="detected_notes">単音・メロディ</option>
-            </select>
-            <span className="nc-ribbon-label">譜面タイプ</span>
-          </div>
-        )}
+
 
 
         {/* Capo */}
@@ -319,25 +305,10 @@ export function ResultHeader({
           
           {showMoreMenu && (
             <div className="nc-export-menu" onClick={(e) => e.stopPropagation()} role="menu" aria-label="Export formats">
-              <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); handleExportMIDI(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleExportMIDI(); setShowMoreMenu(false); } }} className="nc-export-item">
-                <div className="nc-export-item-icon"><Disc size={14} /></div>
-                <span>MIDI</span>
-                <span className="nc-export-shortcut">⌃⇧M</span>
-              </div>
-              <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); handleExportMusicXML(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleExportMusicXML(); setShowMoreMenu(false); } }} className="nc-export-item">
-                <div className="nc-export-item-icon"><FileCode size={14} /></div>
-                <span>MusicXML</span>
-                <span className="nc-export-shortcut">⌃⇧X</span>
-              </div>
               <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); handleExportText(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleExportText(); setShowMoreMenu(false); } }} className="nc-export-item">
                 <div className="nc-export-item-icon"><FileText size={14} /></div>
                 <span>Text</span>
                 <span className="nc-export-shortcut">⌃⇧T</span>
-              </div>
-              <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); handleExportGP5(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); handleExportGP5(); setShowMoreMenu(false); } }} className="nc-export-item">
-                <div className="nc-export-item-icon"><Guitar size={14} /></div>
-                <span>Guitar Pro 5</span>
-                <span className="nc-export-shortcut">⌃⇧G</span>
               </div>
               <div className="my-1 border-t border-[var(--gf-border)]" />
               <div role="menuitem" tabIndex={0} onClick={(e) => { e.stopPropagation(); window.print(); setShowMoreMenu(false); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); window.print(); setShowMoreMenu(false); } }} className="nc-export-item">

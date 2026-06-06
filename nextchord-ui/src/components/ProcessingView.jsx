@@ -38,8 +38,15 @@ export function ProcessingView({ session, stepsDone }) {
   // Time-based: where we "should" be based on elapsed time and average durations
   const timeBasedPct = Math.min(95, (elapsedSec / totalAvgSec) * 100);
   
-  // Use the HIGHER of the two, but never exceed 95% until truly done
-  const rawPct = doneCount >= steps.length ? 100 : Math.max(stepBasedPct, timeBasedPct);
+  // Each step has a maximum allowed percentage so we don't display 95% while stuck on an early step
+  const maxPctForCurrentStep = doneCount >= steps.length 
+    ? 100 
+    : ((doneCount + 0.9) / steps.length) * 100;
+  
+  // Use the HIGHER of the two, but capped by the current step's max percent
+  const rawPct = doneCount >= steps.length 
+    ? 100 
+    : Math.min(maxPctForCurrentStep, Math.max(stepBasedPct, timeBasedPct));
   const pct = Math.min(doneCount >= steps.length ? 100 : 95, Math.round(rawPct));
 
   // ETA from elapsed

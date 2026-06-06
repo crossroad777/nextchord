@@ -179,7 +179,6 @@ export function ChordProView({
     const [editMode, setEditMode] = useState(false);
     const [editText, setEditText] = useState('');
     const [fontSize, setFontSize] = useState(16);
-    const [splitMode, setSplitMode] = useState(false);
     // scrollMode: 'off' | 'follow' | 'constant'
     const [scrollMode, setScrollMode] = useState('follow');
     // 速度（バー）: 0.1 〜 3.0
@@ -207,7 +206,6 @@ export function ChordProView({
     // prop変更時（新セッション）にリセット
     useEffect(() => {
         setLocalText(chordproText || '');
-        setSplitMode(false);
     }, [chordproText]);
 
     // パース（localTextを使用）
@@ -314,33 +312,10 @@ export function ChordProView({
             // 編集開始時にChordPro形式を2行形式のプレーンテキストに変換
             setEditText(chordproToPlainText(localText || ''));
             setEditMode(true);
-            setSplitMode(false);
         }
     }, [editMode, localText, editText, onChordproChange]);
 
-    // 行分割ハンドラー
-    // afterSegIdx: このセグメントの後ろで改行する
-    const handleSplitLine = useCallback((parsedLine, afterSegIdx) => {
-        const rawLines = localText.split('\n');
-        const rawLineIdx = parsedLine.rawLineIdx;
-        if (rawLineIdx === undefined || rawLineIdx >= rawLines.length) return;
 
-        const segs = parsedLine.segments;
-        // 分割点前後のChordProテキストを再構築
-        const part1 = segs.slice(0, afterSegIdx + 1)
-            .map(s => (s.chord ? `[${s.chord}]` : '') + s.lyrics)
-            .join('').trimEnd();
-        const part2 = segs.slice(afterSegIdx + 1)
-            .map(s => (s.chord ? `[${s.chord}]` : '') + s.lyrics)
-            .join('');
-
-        if (!part2.trim()) return; // 後半が空なら分割不要
-
-        rawLines[rawLineIdx] = part1 + '\n' + part2;
-        const newText = rawLines.join('\n');
-        setLocalText(newText);
-        if (onChordproChange) onChordproChange(newText);
-    }, [localText, onChordproChange]);
 
     // レンダリング用の行インデックスカウンター（タイミング行のみカウント）
     let timingIdx = 0;
@@ -441,14 +416,7 @@ export function ChordProView({
 
             <div className="nc-ribbon-divider" style={{ height: '24px' }} />
 
-            <button
-                className={`cp-edit-btn ${splitMode ? 'active' : ''}`}
-                onClick={() => { setSplitMode(p => !p); setEditMode(false); }}
-                title="行分割モード"
-                disabled={editMode}
-            >
-                {splitMode ? '✂ 分割中' : '✂ 行分割'}
-            </button>
+
             <button
                 className={`cp-edit-btn ${editMode ? 'active' : ''}`}
                 onClick={toggleEdit}
@@ -562,8 +530,8 @@ export function ChordProView({
                                     <div 
                                         key={i} 
                                         ref={isActive ? activeLineRef : null}
-                                        className={`cp-line cp-has-lyrics ${isActive ? 'cp-line-active' : ''} ${splitMode ? 'cp-split-mode' : ''}`}
-                                        onClick={() => !splitMode && onSeek && lineTimings?.[currentTimingIdx] && 
+                                        className={`cp-line cp-has-lyrics ${isActive ? 'cp-line-active' : ''}`}
+                                        onClick={() => onSeek && lineTimings?.[currentTimingIdx] && 
                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                     >
                                         <div style={{ display: 'flex', width: '100%', alignItems: 'flex-end', flexWrap: 'wrap' }}>
@@ -588,19 +556,7 @@ export function ChordProView({
                                                                     )}
                                                                     <span className="cp-lyrics">{(!seg.lyrics || !seg.lyrics.trim()) ? "\u00A0" : seg.lyrics}</span>
                                                                 </span>
-                                                                {/* 分割ボタン */}
-                                                                {splitMode && !isBarLine && (
-                                                                    <button
-                                                                        className="cp-split-btn"
-                                                                        onClick={e => {
-                                                                            e.stopPropagation();
-                                                                            // Note: Split line logic might need updates for measures
-                                                                        }}
-                                                                        title={`ここで改行`}
-                                                                    >
-                                                                        ✂
-                                                                    </button>
-                                                                )}
+
                                                             </React.Fragment>
                                                         );
                                                     })}
@@ -615,11 +571,7 @@ export function ChordProView({
                                 return null;
                         }
                     })}
-                    {splitMode && (
-                        <div className="cp-split-hint">
-                            ✂ 分割モード: コード間の ✂ をクリックして改行を挿入
-                        </div>
-                    )}
+
                 </div>
             )}
         </div>
