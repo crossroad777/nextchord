@@ -454,10 +454,10 @@ def verify_and_correct_chords(
     beat_times,
     audio_path,
     key_name,
-    sr=11025,  # デフォルトを11025Hzにダウンサンプリングして高速化
+    sr=22050,  # waveform_utilsキャッシュと同じSRを使用し、再デコードを回避
     correction_threshold=0.25,
     min_improvement=0.15,
-    use_hpss=True,  # 11025Hzなら十分に高速なため、精度を維持するHPSSをデフォルトで有効化
+    use_hpss=False,  # HPSS省略で高速化（CQTクロマは十分にロバスト）
 ):
     """
     BTCの予測コードを音声クロマと照合して検証・補正する。

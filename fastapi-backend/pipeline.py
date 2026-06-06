@@ -106,7 +106,7 @@ def _is_hallucination(text: str) -> bool:
     return False
 
 
-def _estimate_time_signature(beat_times, bpm, wav_path=None):
+def _estimate_time_signature(beat_times, bpm, wav_path=None, onset_env=None, onset_sr=None):
     """
     ビート配列とBPMから拍子(time signature)を推定する。
 
@@ -127,6 +127,10 @@ def _estimate_time_signature(beat_times, bpm, wav_path=None):
     wav_path : str or Path, optional
         音声ファイルパス。指定時はonset strengthベースの推定を行う。
         未指定時はデフォルト4/4を返す。
+    onset_env : np.ndarray, optional
+        事前計算済みのonset strength envelope。指定時は音声の再読み込みをスキップする。
+    onset_sr : int, optional
+        onset_env計算時のサンプルレート。onset_envと一緒に指定する。
 
     Returns
     -------
@@ -139,11 +143,15 @@ def _estimate_time_signature(beat_times, bpm, wav_path=None):
         return "4/4"
 
     # --- onset strengthベースのアクセントパターン解析 ---
-    if wav_path is not None:
+    if onset_env is not None or wav_path is not None:
         try:
-            from waveform_utils import load_audio_cached
-            y, sr = load_audio_cached(str(wav_path), sr=22050, mono=True)
-            onset_env = librosa.onset.onset_strength(y=y, sr=sr)
+            if onset_env is not None and onset_sr is not None:
+                # 事前計算済みのonset envelopeを再利用（音声読み込みスキップ）
+                sr = onset_sr
+            else:
+                from waveform_utils import load_audio_cached
+                y, sr = load_audio_cached(str(wav_path), sr=22050, mono=True)
+                onset_env = librosa.onset.onset_strength(y=y, sr=sr)
             times = librosa.times_like(onset_env, sr=sr)
 
             # 各ビート時刻でのonset strengthを取得
@@ -255,11 +263,12 @@ def _fast_beat_detect(wav_path):
         y, sr = load_audio_cached(str(wav_path), sr=22050, mono=True)
         tempo, beat_frames = librosa.beat.beat_track(y=y, sr=sr, units='frames')
         beat_times = librosa.frames_to_time(beat_frames, sr=sr)
+        onset_env = librosa.onset.onset_strength(y=y, sr=sr)
         print(f"[BEATS] librosa beat_track: {len(beat_times)} beats, tempo={float(tempo) if hasattr(tempo,'__float__') else tempo}, {_time.time()-t0:.1f}s")
-        return beat_times
+        return beat_times, onset_env, sr
     except Exception as e:
         print(f"[BEATS] librosa beat_track failed: {e}, returning empty")
-        return np.array([])
+        return np.array([]), None, None
 
 
 def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
@@ -368,9 +377,10 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 try:
                     cm = get_chordmini_engine()
                     with _gpu_lock:
-                        cm.load()
+                        cm.load()  # no-op if already loaded; engine handles idempotent load
                         seg_s, seg_l = cm.detect_chords(btc_input_path)
-                        cm.unload()  # VRAM解放
+                        # cm.unload() を削除: VRAMにモデルを常駐させて次回実行を高速化
+                        # (warm-keeping strategy: load/unload往復の2-3秒を節約)
                     chord_engine_used = 'ChordMini'
                     label_counts = Counter(seg_l)
                     print(f"[{sid}] [ChordMini] Total segments: {len(seg_l)}, top: {label_counts.most_common(10)}")
@@ -562,6 +572,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             # CPU系タスクを一気に投入
             # Optimization 1: librosa beat_track (~5s) instead of madmom RNNBeatProcessor (~45s)
             futures['act'] = executor.submit(_fast_beat_detect, wav_path)
+            # Optimization 5: parallelize key estimation from audio (chroma-based)
+            futures['key_audio'] = executor.submit(estimate_key_from_audio, str(wav_path))
             # Optimization 2: key_processor deferred - submit only if chroma/chord keys disagree
             futures['key_vec'] = None
             futures['chroma_chords'] = executor.submit(
@@ -1126,6 +1138,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             # --- 完了順に結果を回収（as_completed）---
             # 先に終わったタスクから順に進捗更新される
             act = None
+            beat_onset_env = None
+            beat_onset_sr = None
             key_vec = None
             whisper_res = None
             hps_result = {}
@@ -1232,7 +1246,9 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 
                 if step_name == 'act':
                     try:
-                        act = completed_future.result()
+                        act_result = completed_future.result()
+                        # _fast_beat_detect now returns (beat_times, onset_env, sr)
+                        act, beat_onset_env, beat_onset_sr = act_result
                         t_beats = time.time() - start_total
                         # act is now beat_times (1D array) from _fast_beat_detect
                         n_beats = len(act) if act is not None else 0
@@ -1240,6 +1256,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         print(f"[{session_id}] [PERF] Beats done (librosa): {t_beats:.1f}s, {n_beats} beats")
                         _update_step(session_data, "beats", f"[OK] ビート検出 ({t_beats:.0f}s)")
                     except Exception as e:
+                        beat_onset_env, beat_onset_sr = None, None
                         perf_log.append(f"[FAIL] Beats: {type(e).__name__}: {e}")
                         print(f"[{session_id}] [ERROR] Beats failed: {e}")
                 
@@ -1507,7 +1524,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
 
         # 拍子を推定（ビート配列 + onset strengthアクセントパターンから）
 
-        time_sig = _estimate_time_signature(v_time, bpm, wav_path=wav_path)
+        time_sig = _estimate_time_signature(v_time, bpm, wav_path=wav_path, onset_env=beat_onset_env, onset_sr=beat_onset_sr)
         session_data["time_signature"] = time_sig
         print(f"[{session_id}] [TIME_SIG] Estimated: {time_sig}")
         perf_log.append(f"Time signature: {time_sig}")
@@ -1835,7 +1852,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         # 4.5 キー推定（Optimization 2: chroma+chord一致時はmadmomスキップ）
         if structured:
             # (1) 音声chromaベースのキー推定（最も信頼できる）
-            chroma_key = estimate_key_from_audio(str(wav_path))
+            chroma_key = futures['key_audio'].result()
             
             # (2) コード進行からのキー推定
             chord_key = estimate_key_from_chords_fn(structured)
@@ -2027,11 +2044,13 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             import subprocess, os
             ffmpeg = os.getenv("FFMPEG_PATH", "ffmpeg")
             try:
-                subprocess.run(
+                # 非同期変換: Popenでバックグラウンド実行し、パイプライン完了を先に報告する。
+                # MP3が未完成の間はブラウザがWAVにフォールバックする。
+                subprocess.Popen(
                     [ffmpeg, "-y", "-i", str(wav_path), "-b:a", "192k", str(mp3_path)],
-                    check=True, capture_output=True, timeout=60
+                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
                 )
-                print(f"[{session_id}] [MP3] Converted for browser playback: {mp3_path.stat().st_size // 1024}KB")
+                print(f"[{session_id}] [MP3] Async conversion started (browser uses WAV until ready)")
             except Exception as e:
                 print(f"[{session_id}] [MP3] Conversion failed: {e} (browser will use WAV)")
         

@@ -253,6 +253,16 @@ async def lifespan(app: FastAPI):
         print("CRITICAL: Failed to load models in lifespan.")
         traceback.print_exc()
     
+    # Pre-initialize Janome tokenizer and chord templates to avoid first-run delay
+    try:
+        from phrase_processor import _tokenizer
+        from chord_verifier import _build_chord_templates, _CHORD_PC_CACHE
+        if not _CHORD_PC_CACHE:
+            _build_chord_templates()
+        print(f"[INIT] Janome tokenizer and {len(_CHORD_PC_CACHE)} chord templates pre-loaded")
+    except Exception as e:
+        print(f"[INIT] Pre-init warning (non-fatal): {e}")
+    
     load_all_sessions()
     yield
 
