@@ -744,6 +744,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         if _is_faster:
                             # faster-whisper API
                             print(f"[{sid}] [WHISPER] faster-whisper transcribe starting...", flush=True)
+                            import torch as _torch_check
+                            _has_cuda = _torch_check.cuda.is_available()
                             # CPU環境での処理速度極限化のためのチューニング
                             # beam_sizeを5->1へ下げることでCPU負荷を数分の一にし、
                             # vad_filterをTrueにすることで無音区間のスキャンをスキップして高速化
@@ -754,7 +756,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 condition_on_previous_text=False,
                                 no_speech_threshold=0.3,
                                 vad_filter=False, # 音楽のボーカル検出漏れを防ぐためVADは無効化
-                                beam_size=5,     # 精度向上のためビームサイズを5に戻す
+                                beam_size=5 if _has_cuda else 1,  # GPU=5(精度優先), CPU=1(速度優先, ~3-5x高速)
                                 temperature=0.0,
                             )
                         else:

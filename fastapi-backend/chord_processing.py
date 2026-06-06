@@ -508,9 +508,14 @@ def estimate_key_from_audio(wav_path: str) -> str:
         duration = len(y) / sr
         print(f"[ChromaKey] Audio loaded: {duration:.1f}s, sr={sr}")
         
-        # === Step 1: HPSS で倍音成分のみ抽出 ===
-        y_harmonic = librosa.effects.harmonic(y, margin=4.0)
-        print(f"[ChromaKey] HPSS: harmonic component extracted")
+        # === Step 1: HPSS で倍音成分のみ抽出（GPU時のみ、CPU時はスキップで高速化） ===
+        import torch as _t
+        if _t.cuda.is_available():
+            y_harmonic = librosa.effects.harmonic(y, margin=4.0)
+            print(f"[ChromaKey] HPSS: harmonic component extracted")
+        else:
+            y_harmonic = y  # CPU: HPSSスキップ（10-20秒節約）
+            print(f"[ChromaKey] HPSS skipped (CPU mode)")
         
         # === Step 2: チューニング推定・補正 ===
         tuning = librosa.estimate_tuning(y=y_harmonic, sr=sr)
