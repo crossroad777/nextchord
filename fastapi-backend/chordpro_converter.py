@@ -31,17 +31,67 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
         phrase_end = times[-1] + 2.0
     phrase_duration = max(phrase_end - phrase_start, 0.01)
     
-    raw_positions = {}
+    # === Robust Gap-Aware Alignment: Text & Word Index Reconstruction ===
+    rebuilt_text = ""
+    rebuilt_words = []
+    curr_idx = 0
+
     if words:
-        word_char_indices = []
-        current_idx = 0
-        for w in words:
+        words_sorted = sorted(words, key=lambda x: x["start"])
+        beat_dur = 0.5
+        if phrase_end and phrase_start:
+            duration = phrase_end - phrase_start
+            beat_dur = max(0.2, min(1.0, duration / 16))
+
+        # 1. Gap from phrase_start to the first word
+        t_first = words_sorted[0]["start"]
+        gap = t_first - phrase_start
+        if gap > 0.4:
+            num_spaces = max(1, int(round(gap / beat_dur)) * 2)
+            rebuilt_text += " " * num_spaces
+            curr_idx += num_spaces
+
+        # 2. Add words and middle gaps
+        for idx, w in enumerate(words_sorted):
             w_text = w.get("word", w.get("text", ""))
             w_len = len(w_text)
             w_start = w["start"]
             w_end = w.get("end", w["start"] + max(0.2, w_len * 0.1))
-            word_char_indices.append((w_start, w_end, current_idx, w_len))
-            current_idx += w_len
+
+            rebuilt_text += w_text
+            rebuilt_words.append({
+                "start": w_start,
+                "end": w_end,
+                "char_idx": curr_idx,
+                "w_len": w_len
+            })
+            curr_idx += w_len
+
+            # Check gap to the next word
+            if idx + 1 < len(words_sorted):
+                t_next = words_sorted[idx + 1]["start"]
+                gap_mid = t_next - w_end
+                if gap_mid > 0.4:
+                    num_spaces = max(1, int(round(gap_mid / beat_dur)) * 2)
+                    rebuilt_text += " " * num_spaces
+                    curr_idx += num_spaces
+
+        # 3. Gap from the last word to the phrase_end
+        t_last = words_sorted[-1].get("end", words_sorted[-1]["start"] + 0.3)
+        if phrase_end:
+            gap_end = phrase_end - t_last
+            if gap_end > 0.4:
+                num_spaces = max(1, int(round(gap_end / beat_dur)) * 2)
+                rebuilt_text += " " * num_spaces
+
+        text = rebuilt_text
+        text_len = len(text)
+
+    raw_positions = {}
+    if words and rebuilt_words:
+        word_char_indices = []
+        for rw in rebuilt_words:
+            word_char_indices.append((rw["start"], rw["end"], rw["char_idx"], rw["w_len"]))
             
         for i, (ct, cc) in enumerate(chord_changes):
             best_idx = 0
