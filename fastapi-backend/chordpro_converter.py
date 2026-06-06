@@ -24,17 +24,17 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
     if not chord_changes: return text
     text_len = len(text)
     if text_len == 0: return text
-    if len(chord_changes) == 1: return f"[{chord_changes[0][1]}]{text}"
     if phrase_end is None or phrase_end <= phrase_start:
         times = [ct for ct, _ in chord_changes]
         phrase_start = times[0]
         phrase_end = times[-1] + 2.0
     phrase_duration = max(phrase_end - phrase_start, 0.01)
     
-    # === Robust Gap-Aware Alignment: Text & Word Index Reconstruction ===
+    # === Robust Segment-based Interpolation Alignment ===
     rebuilt_text = ""
-    rebuilt_words = []
-    curr_idx = 0
+    segments = []
+    current_time = phrase_start
+    current_char_idx = 0
 
     if words:
         words_sorted = sorted(words, key=lambda x: x["start"])
@@ -43,79 +43,101 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
             duration = phrase_end - phrase_start
             beat_dur = max(0.2, min(1.0, duration / 16))
 
-        # 1. Gap from phrase_start to the first word
-        t_first = words_sorted[0]["start"]
-        gap = t_first - phrase_start
-        if gap > 0.4:
-            num_spaces = max(1, int(round(gap / beat_dur)) * 2)
-            rebuilt_text += " " * num_spaces
-            curr_idx += num_spaces
-
-        # 2. Add words and middle gaps
         for idx, w in enumerate(words_sorted):
             w_text = w.get("word", w.get("text", ""))
             w_len = len(w_text)
             w_start = w["start"]
-            w_end = w.get("end", w["start"] + max(0.2, w_len * 0.1))
+            w_end = max(w_start + 0.05, w.get("end", w_start + max(0.2, w_len * 0.1)))
 
+            # 1. Gap from current_time to the word
+            if w_start > current_time:
+                gap = w_start - current_time
+                if gap > 0.05:
+                    num_spaces = max(1, int(round(gap / beat_dur)) * 2) if gap > 0.4 else 1
+                    rebuilt_text += " " * num_spaces
+                    segments.append({
+                        "type": "gap",
+                        "start": current_time,
+                        "end": w_start,
+                        "char_start": current_char_idx,
+                        "char_end": current_char_idx + num_spaces
+                    })
+                    current_char_idx += num_spaces
+                else:
+                    segments.append({
+                        "type": "gap",
+                        "start": current_time,
+                        "end": w_start,
+                        "char_start": current_char_idx,
+                        "char_end": current_char_idx
+                    })
+
+            # 2. Add word
             rebuilt_text += w_text
-            rebuilt_words.append({
+            segments.append({
+                "type": "word",
                 "start": w_start,
                 "end": w_end,
-                "char_idx": curr_idx,
-                "w_len": w_len
+                "char_start": current_char_idx,
+                "char_end": current_char_idx + w_len
             })
-            curr_idx += w_len
-
-            # Check gap to the next word
-            if idx + 1 < len(words_sorted):
-                t_next = words_sorted[idx + 1]["start"]
-                gap_mid = t_next - w_end
-                if gap_mid > 0.4:
-                    num_spaces = max(1, int(round(gap_mid / beat_dur)) * 2)
-                    rebuilt_text += " " * num_spaces
-                    curr_idx += num_spaces
+            current_char_idx += w_len
+            current_time = w_end
 
         # 3. Gap from the last word to the phrase_end
-        t_last = words_sorted[-1].get("end", words_sorted[-1]["start"] + 0.3)
-        if phrase_end:
-            gap_end = phrase_end - t_last
-            if gap_end > 0.4:
-                num_spaces = max(1, int(round(gap_end / beat_dur)) * 2)
+        if phrase_end and phrase_end > current_time:
+            gap = phrase_end - current_time
+            if gap > 0.05:
+                num_spaces = max(1, int(round(gap / beat_dur)) * 2) if gap > 0.4 else 1
                 rebuilt_text += " " * num_spaces
+                segments.append({
+                    "type": "gap",
+                    "start": current_time,
+                    "end": phrase_end,
+                    "char_start": current_char_idx,
+                    "char_end": current_char_idx + num_spaces
+                })
+                current_char_idx += num_spaces
+            else:
+                segments.append({
+                    "type": "gap",
+                    "start": current_time,
+                    "end": phrase_end,
+                    "char_start": current_char_idx,
+                    "char_end": current_char_idx
+                })
 
         text = rebuilt_text
         text_len = len(text)
 
     raw_positions = {}
-    if words and rebuilt_words:
-        word_char_indices = []
-        for rw in rebuilt_words:
-            word_char_indices.append((rw["start"], rw["end"], rw["char_idx"], rw["w_len"]))
-            
+    if words and segments:
         for i, (ct, cc) in enumerate(chord_changes):
-            best_idx = 0
-            min_diff = float("inf")
-            inside_word = False
-            
-            for w_start, w_end, char_idx, w_len in word_char_indices:
-                if w_start <= ct <= w_end and w_end > w_start:
-                    ratio = (ct - w_start) / (w_end - w_start)
-                    ratio = max(0.0, min(1.0, ratio))
-                    best_idx = char_idx + round(ratio * w_len)
-                    inside_word = True
-                    break
-                    
-            if not inside_word:
-                for w_start, w_end, char_idx, w_len in word_char_indices:
-                    diff_start = abs(w_start - ct)
-                    diff_end = abs(w_end - ct)
-                    if diff_start < min_diff:
-                        min_diff = diff_start
-                        best_idx = char_idx
-                    if diff_end < min_diff:
-                        min_diff = diff_end
-                        best_idx = char_idx + w_len
+            best_idx = None
+            if ct <= segments[0]["start"]:
+                best_idx = segments[0]["char_start"]
+            elif ct >= segments[-1]["end"]:
+                best_idx = segments[-1]["char_end"]
+            else:
+                for seg in segments:
+                    if seg["start"] <= ct <= seg["end"]:
+                        dur = seg["end"] - seg["start"]
+                        ratio = (ct - seg["start"]) / dur if dur > 0 else 0.0
+                        ratio = max(0.0, min(1.0, ratio))
+                        char_diff = seg["char_end"] - seg["char_start"]
+                        best_idx = seg["char_start"] + int(round(ratio * char_diff))
+                        break
+                
+                if best_idx is None:
+                    min_diff = float("inf")
+                    for seg in segments:
+                        diff = min(abs(seg["start"] - ct), abs(seg["end"] - ct))
+                        if diff < min_diff:
+                            min_diff = diff
+                            if abs(seg["start"] - ct) < abs(seg["end"] - ct):
+                                best_idx = seg["char_start"]
+                            else:
+                                best_idx = seg["char_end"]
             raw_positions[i] = best_idx
     else:
         for i, (ct, cc) in enumerate(chord_changes):
