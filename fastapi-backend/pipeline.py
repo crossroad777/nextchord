@@ -57,6 +57,8 @@ _EMOJI_RE = _re.compile(
 )
 _KNOWN_HALLUCINATIONS = [
     'soundhodori', 'sound hodori', '사운드호돌이',
+    'サウンドホドリ', 'サウンドゥホドリ', 'ホドリ', 'hodori',
+    'instagram', 'tiktok',
     'thank you for watching', 'thanks for watching',
     'please subscribe', 'like and subscribe',
     'music by', 'subtitles by',
@@ -979,6 +981,127 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 
                     except Exception as gap_err:
                         print(f"[{sid}] [WHISPER] Gap recovery failed (non-fatal): {gap_err}")
+                    
+                    # --- Mid-song & trailing gap re-transcription ---
+                    # Whisper loses attention after long instrumental sections.
+                    # Find any gap > GAP_THRESHOLD seconds between consecutive segments
+                    # (or between last segment and song end) and re-transcribe.
+                    GAP_THRESHOLD = 15.0  # seconds
+                    try:
+                        song_duration = info.duration if info.duration > 0 else 0
+                        if segments and song_duration > 0:
+                            # Build list of gaps: (gap_start, gap_end)
+                            gaps = []
+                            for gi in range(len(segments) - 1):
+                                seg_end = segments[gi].get('end', 0)
+                                next_start = segments[gi + 1].get('start', 0)
+                                if next_start - seg_end > GAP_THRESHOLD:
+                                    gaps.append((seg_end, next_start))
+                            # Trailing gap
+                            last_seg_end = segments[-1].get('end', 0)
+                            if song_duration - last_seg_end > GAP_THRESHOLD:
+                                gaps.append((last_seg_end, song_duration))
+                            
+                            if gaps:
+                                print(f"[{sid}] [WHISPER] Found {len(gaps)} mid/trailing gaps: {[(f'{s:.0f}-{e:.0f}s') for s,e in gaps]}")
+                                from waveform_utils import load_audio_cached
+                                y_full_gap, sr_gap = load_audio_cached(str(wav), sr=16000, mono=True)
+                                
+                                all_recovered = []
+                                for gap_s, gap_e in gaps:
+                                    # Add margin before/after for context
+                                    cut_start = max(0, gap_s - 5.0)
+                                    cut_end = min(song_duration, gap_e + 5.0)
+                                    
+                                    s_sample = int(cut_start * sr_gap)
+                                    e_sample = min(int(cut_end * sr_gap), len(y_full_gap))
+                                    y_cut = y_full_gap[s_sample:e_sample]
+                                    
+                                    cut_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                                    sf.write(cut_wav.name, y_cut, sr_gap)
+                                    cut_wav.close()
+                                    
+                                    try:
+                                        print(f"[{sid}] [WHISPER] Re-transcribing gap {cut_start:.0f}s-{cut_end:.0f}s...")
+                                        cut_segs, _ = model.transcribe(
+                                            cut_wav.name,
+                                            language="ja",
+                                            word_timestamps=True,
+                                            condition_on_previous_text=False,
+                                            no_speech_threshold=0.3,
+                                            vad_filter=False,
+                                            beam_size=5,
+                                            temperature=0.0,
+                                        )
+                                        
+                                        for cs in cut_segs:
+                                            ct = cs.text.strip()
+                                            if not ct or _is_hallucination(ct):
+                                                continue
+                                            # Extra check: skip if mostly non-Japanese
+                                            jp_chars = sum(1 for c in ct if '\u3040' <= c <= '\u9FFF' or '\u30A0' <= c <= '\u30FF')
+                                            if len(ct) > 3 and jp_chars / len(ct) < 0.3:
+                                                print(f"[{sid}] [WHISPER] Gap seg filtered (non-JP): '{ct[:40]}'")
+                                                continue
+                                            real_start = cs.start + cut_start
+                                            real_end = cs.end + cut_start
+                                            # Only keep segments that fall within the actual gap
+                                            if real_start < gap_s - 1.0 or real_start > gap_e + 1.0:
+                                                continue
+                                            cut_words = []
+                                            if cs.words:
+                                                for cw in cs.words:
+                                                    cut_words.append({
+                                                        'start': cw.start + cut_start,
+                                                        'end': cw.end + cut_start,
+                                                        'word': cw.word,
+                                                    })
+                                            recovered_seg = {
+                                                'id': -1,
+                                                'start': real_start,
+                                                'end': real_end,
+                                                'text': ct,
+                                                'words': cut_words if cut_words else None,
+                                            }
+                                            all_recovered.append(recovered_seg)
+                                            try:
+                                                print(f"[{sid}] [WHISPER] Gap recovered: [{real_start:.1f}s-{real_end:.1f}s] '{ct[:50]}'")
+                                            except Exception:
+                                                print(f"[{sid}] [WHISPER] Gap recovered: [{real_start:.1f}s-{real_end:.1f}s]")
+                                    finally:
+                                        import os as _os_gap
+                                        if _os_gap.path.exists(cut_wav.name):
+                                            _os_gap.unlink(cut_wav.name)
+                                
+                                if all_recovered:
+                                    segments.extend(all_recovered)
+                                    segments.sort(key=lambda s: s.get('start', 0))
+                                    # Deduplicate overlapping segments
+                                    deduped = []
+                                    for seg in segments:
+                                        s_start = seg.get('start', 0)
+                                        s_end = seg.get('end', 0)
+                                        # Check if this segment overlaps significantly with an existing one
+                                        is_dup = False
+                                        for existing in deduped:
+                                            e_start = existing.get('start', 0)
+                                            e_end = existing.get('end', 0)
+                                            overlap = min(s_end, e_end) - max(s_start, e_start)
+                                            min_dur = min(s_end - s_start, e_end - e_start)
+                                            if min_dur > 0 and overlap / min_dur > 0.5:
+                                                is_dup = True
+                                                break
+                                        if not is_dup:
+                                            deduped.append(seg)
+                                    if len(deduped) < len(segments):
+                                        print(f"[{sid}] [WHISPER] Deduped: {len(segments)} -> {len(deduped)} segments")
+                                    segments = deduped
+                                    print(f"[{sid}] [WHISPER] Total recovered from gaps: {len(all_recovered)} segments")
+                                else:
+                                    print(f"[{sid}] [WHISPER] Gap re-transcription: no valid segments recovered")
+                    except Exception as mid_gap_err:
+                        print(f"[{sid}] [WHISPER] Mid-gap recovery failed (non-fatal): {mid_gap_err}")
+                        import traceback; traceback.print_exc()
                     
                     perf_log.append(f"[DEBUG] Whisper segments: {len(segments)}")
                     perf_log.append(f"[DEBUG] First segment: {segments[0].get('text','')[:80]}" if segments else "[DEBUG] No segments")
