@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from "react";
 
-export function ProcessingView({ session, stepsDone }) {
+export function ProcessingView({ session, stepsDone, completedSteps = [] }) {
   const steps = [
     { key: 'chords', label: 'コード解析', icon: '🎸', avgSec: 3 },
     { key: 'whisper', label: '歌詞検出', icon: '🎤', avgSec: 8 },
@@ -9,20 +9,18 @@ export function ProcessingView({ session, stepsDone }) {
     { key: 'postprocess', label: 'スコア生成', icon: '📄', avgSec: 5 },
   ];
   const totalAvgSec = steps.reduce((a, s) => a + s.avgSec, 0);
-  const doneCount = stepsDone;
+  
+  // Count how many steps are actually completed based on their keys
+  const completedCount = steps.filter(s => completedSteps.includes(s.key)).length;
 
-  // Compute cumulative time for each step boundary
-  const cumTime = [0];
-  steps.forEach((s, i) => { cumTime.push(cumTime[i] + s.avgSec); });
-
-  // Track elapsed since analysis started (step 0)
+  // Track elapsed since analysis started
   const startTimeRef = useRef(Date.now());
   const [elapsedSec, setElapsedSec] = useState(0);
 
-  // Reset start time only when starting fresh (doneCount goes to 0)
+  // Reset start time only when starting fresh
   useEffect(() => {
-    if (doneCount === 0) startTimeRef.current = Date.now();
-  }, [doneCount]);
+    if (completedCount === 0) startTimeRef.current = Date.now();
+  }, [completedCount]);
 
   // Smooth tick
   useEffect(() => {
@@ -33,21 +31,21 @@ export function ProcessingView({ session, stepsDone }) {
   }, []);
 
   // Calculate percentage from two sources: actual steps done + time-based interpolation
-  const stepBasedPct = (doneCount / steps.length) * 100;
+  const stepBasedPct = (completedCount / steps.length) * 100;
   
   // Time-based: where we "should" be based on elapsed time and average durations
   const timeBasedPct = Math.min(95, (elapsedSec / totalAvgSec) * 100);
   
   // Each step has a maximum allowed percentage so we don't display 95% while stuck on an early step
-  const maxPctForCurrentStep = doneCount >= steps.length 
+  const maxPctForCurrentStep = completedCount >= steps.length 
     ? 100 
-    : ((doneCount + 0.9) / steps.length) * 100;
+    : ((completedCount + 0.9) / steps.length) * 100;
   
   // Use the HIGHER of the two, but capped by the current step's max percent
-  const rawPct = doneCount >= steps.length 
+  const rawPct = completedCount >= steps.length 
     ? 100 
     : Math.min(maxPctForCurrentStep, Math.max(stepBasedPct, timeBasedPct));
-  const pct = Math.min(doneCount >= steps.length ? 100 : 95, Math.round(rawPct));
+  const pct = Math.min(completedCount >= steps.length ? 100 : 95, Math.round(rawPct));
 
   // ETA from elapsed
   const etaSec = Math.max(0, Math.round(totalAvgSec - elapsedSec));
@@ -60,11 +58,13 @@ export function ProcessingView({ session, stepsDone }) {
     return `残り約${min}分${sec}秒`;
   };
 
+  const firstUncompletedIndex = steps.findIndex(s => !completedSteps.includes(s.key));
+
   return (
     <div
       className="h-full flex flex-col items-center justify-center p-12 text-center animate-in fade-in duration-700"
       role="status"
-      aria-label={`解析中。ステップ ${doneCount + 1} / ${steps.length}`}
+      aria-label={`解析中。ステップ ${completedCount + 1} / ${steps.length}`}
     >
       <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[500px] h-[300px] pointer-events-none" style={{ background: 'radial-gradient(ellipse, rgba(99, 102, 241, 0.06) 0%, transparent 65%)' }} />
 
@@ -108,8 +108,8 @@ export function ProcessingView({ session, stepsDone }) {
       {/* Step checklist */}
       <div className="w-full max-w-xs space-y-2 mb-6" role="list" aria-label="解析ステップ">
         {steps.map((step, i) => {
-          const isDone = i < doneCount;
-          const isCurrent = i === doneCount;
+          const isDone = completedSteps.includes(step.key);
+          const isCurrent = i === firstUncompletedIndex;
           return (
             <div key={step.key}
               className={`flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-500 ${isDone ? 'bg-[rgba(99,102,241,0.08)]' : isCurrent ? 'bg-[var(--nc-surface)] nc-step-active' : 'opacity-40'

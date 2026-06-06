@@ -11,6 +11,7 @@ export function useNextChord() {
   const [status, setStatus] = useState(STATUS.IDLE);
   const [progressMsg, setProgressMsg] = useState("Preparing...");
   const [stepsDone, setStepsDone] = useState(0);
+  const [completedSteps, setCompletedSteps] = useState([]);
   const [session, setSession] = useState(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [currentChord, setCurrentChord] = useState("");
@@ -412,6 +413,7 @@ export function useNextChord() {
         const data = JSON.parse(event.data);
         setProgressMsg(data.progress || "Analyzing...");
         if (typeof data.steps_done === 'number') setStepsDone(data.steps_done);
+        if (Array.isArray(data.completed_steps)) setCompletedSteps(data.completed_steps);
         if (data.filename || data.artist) {
           setSession(prev => prev ? {
             ...prev,
@@ -461,6 +463,7 @@ export function useNextChord() {
       const data = await res.json();
       setProgressMsg(data.progress || "Analyzing...");
       if (typeof data.steps_done === 'number') setStepsDone(data.steps_done);
+      if (Array.isArray(data.completed_steps)) setCompletedSteps(data.completed_steps);
       if (data.filename || data.artist) {
         setSession(prev => prev ? { ...prev, ...(data.filename && { fileName: data.filename }), ...(data.artist && { artist: data.artist }) } : prev);
       }
@@ -1092,7 +1095,7 @@ export function useNextChord() {
 
   return {
     // Status
-    status, progressMsg, stepsDone, session,
+    status, progressMsg, stepsDone, completedSteps, session,
     // Playback
     currentTime, currentChord, isPlaying, setIsPlaying, audioRef,
     togglePlay, handleStop, handleSeek,

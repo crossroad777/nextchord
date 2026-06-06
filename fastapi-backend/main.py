@@ -457,6 +457,7 @@ class StatusResponse(BaseModel):
     filename: Optional[str] = None
     artist: Optional[str] = None
     steps_done: Optional[int] = None
+    completed_steps: Optional[list[str]] = None
     first_beat_time: Optional[float] = None
     beat_times: Optional[list] = None
 
@@ -956,6 +957,7 @@ async def get_status(session_id: str):
         filename=session.get("filename"),
         artist=session.get("artist"),
         steps_done=len(session.get("_steps", {})),
+        completed_steps=list(session.get("_steps", {}).keys()),
         first_beat_time=session.get("first_beat_time"),
         beat_times=session.get("beat_times")
     )
@@ -982,12 +984,14 @@ async def stream_status(session_id: str):
                 "status": session.get("status", "pending"),
                 "progress": session.get("progress", ""),
                 "steps_done": len(session.get("_steps", {})),
+                "completed_steps": list(session.get("_steps", {}).keys()),
                 "filename": session.get("filename"),
                 "artist": session.get("artist"),
             }
 
             # 変化があった場合のみ送信
-            progress_key = f"{current['status']}:{current['progress']}:{current['steps_done']}"
+            steps_key = ",".join(sorted(current['completed_steps']))
+            progress_key = f"{current['status']}:{current['progress']}:{current['steps_done']}:{steps_key}"
             if progress_key != last_progress:
                 yield f"data: {json.dumps(current, ensure_ascii=False)}\n\n"
                 last_progress = progress_key

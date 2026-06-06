@@ -313,6 +313,7 @@ export default function NextChordApp() {
           {app.status === STATUS.PROCESSING && (
             <ProcessingView
               stepsDone={app.stepsDone}
+              completedSteps={app.completedSteps}
               progressMsg={app.progressMsg}
               onCancel={app.resetSession}
             />
