@@ -298,6 +298,20 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
             
         _, ws, we = item
 
+        # Collect words instead of entire phrases first
+        window_words = []
+        for p in phrase_regions:
+            for w in p["words"]:
+                if ws - 0.1 <= w["start"] < we - 0.1:
+                    window_words.append(w)
+                    
+        # If phrase doesn't have words, fallback to old logic
+        fallback_phrases = []
+        if not window_words:
+            for p in phrase_regions:
+                if not p["words"] and p["start"] >= ws - 0.1 and p["start"] < we - 0.1:
+                    fallback_phrases.append(p)
+
         # Find the sustained chord at the start of this window (ws)
         sustained_chord = None
         for ct, cc, _ in sorted([c for c in chord_changes if c[1] != "|"], key=lambda x: x[0]):
@@ -308,7 +322,25 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
 
         window_chords_raw = [(ct, cc) for ct, cc, _ in chord_changes if ws - 0.1 <= ct < we - 0.1]
 
+        # Determine the first lyric time in this window (or fallback to ws)
+        first_lyric_time = ws
+        if window_words:
+            first_lyric_time = min(w["start"] for w in window_words)
+        elif fallback_phrases:
+            first_lyric_time = min(p["start"] for p in fallback_phrases)
+
+        # Smart skip to avoid duplicate chords at line breaks
+        skip_sustained = False
         if sustained_chord and sustained_chord != "N.C.":
+            regular_chords_in_window = [ct for ct, cc in window_chords_raw if cc != "|"]
+            if regular_chords_in_window:
+                first_chord_time = min(regular_chords_in_window)
+                # If there is another chord change within ~1.2 bars from the start of lyrics/window, skip sustained chord
+                threshold = _avg_bar * 1.2
+                if first_chord_time - first_lyric_time < threshold:
+                    skip_sustained = True
+
+        if sustained_chord and sustained_chord != "N.C." and not skip_sustained:
             # Check if there is already a regular chord at ws to avoid duplicates
             has_start_chord = any(abs(ct - ws) < 0.1 and cc != "|" for ct, cc in window_chords_raw)
             if not has_start_chord:
@@ -331,20 +363,6 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
         for ct, cc in snapped_chords:
             if cc == "|" or not window_chords or cc != window_chords[-1][1]:
                 window_chords.append((ct, cc))
-        
-        # Collect words instead of entire phrases
-        window_words = []
-        for p in phrase_regions:
-            for w in p["words"]:
-                if ws - 0.1 <= w["start"] < we - 0.1:
-                    window_words.append(w)
-                    
-        # If phrase doesn't have words, fallback to old logic
-        fallback_phrases = []
-        if not window_words:
-            for p in phrase_regions:
-                if not p["words"] and p["start"] >= ws - 0.1 and p["start"] < we - 0.1:
-                    fallback_phrases.append(p)
                     
         if not window_chords and not window_words and not fallback_phrases:
             continue

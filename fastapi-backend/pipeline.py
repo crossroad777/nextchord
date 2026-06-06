@@ -1350,6 +1350,25 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 print(f"[{session_id}] [BPM] Tempo {raw_bpm:.1f} BPM is in fingerpicking range (160-200), no correction applied")
         
         session_data["bpm"] = round(bpm, 1)
+        
+        # === ビートの終端補完 (Beat Extrapolation) ===
+        audio_duration = librosa.get_duration(path=str(wav_path))
+        if len(v_time) > 1 and audio_duration > 0:
+            last_n = min(16, len(v_time) - 1)
+            avg_interval = np.mean(np.diff(v_time[-last_n:]))
+            if avg_interval > 0:
+                last_beat = v_time[-1]
+                if last_beat < audio_duration - avg_interval * 1.5:
+                    new_beats = []
+                    curr_beat = last_beat + avg_interval
+                    while curr_beat < audio_duration - 0.5:
+                        new_beats.append(curr_beat)
+                        curr_beat += avg_interval
+                    if new_beats:
+                        print(f"[{session_id}] [BEATS] Extrapolated {len(new_beats)} beats from {last_beat:.2f}s to {audio_duration:.2f}s (interval={avg_interval:.3f}s)")
+                        v_time = np.concatenate([v_time, new_beats])
+                        perf_log.append(f"Beats extrapolated: +{len(new_beats)} beats (total={len(v_time)}, duration={audio_duration:.1f}s)")
+
         if "key" not in session_data:
             session_data["key"] = "C major"
 

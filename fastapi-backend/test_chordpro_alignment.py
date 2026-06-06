@@ -1,5 +1,5 @@
 import pytest
-from chordpro_converter import _insert_chords_into_lyrics
+from chordpro_converter import _insert_chords_into_lyrics, structured_to_chordpro
 
 def test_no_words_fallback():
     # wordsが空の場合、全体に対する時間比率で線形配置されること
@@ -92,3 +92,75 @@ def test_single_chord():
     # コードが1つだけの場合は先頭付近に付与 (wordsがない場合)
     result = _insert_chords_into_lyrics("テスト", [(0.0, "C")], None)
     assert "[C]テスト" in result
+
+def test_long_extrapolated_beats():
+    # ビートが補完されて、歌詞の終了時間以降まで十分に続いている場合のアライメント確認
+    words = [
+        {"start": 0.0, "end": 2.0, "word": "未来が"},
+        {"start": 2.0, "end": 4.0, "word": "待ってる"}
+    ]
+    chord_changes = [
+        (0.0, "Am"),
+        (1.0, "F"),
+        (2.0, "C"),
+        (3.0, "G")
+    ]
+    result = _insert_chords_into_lyrics("未来が待ってる", chord_changes, words, phrase_start=0.0, phrase_end=4.0)
+    
+    assert "[Am]" in result
+    assert "[F]" in result
+    assert "[C]" in result
+    assert "[G]" in result
+    assert result.replace("[Am]", "").replace("[F]", "").replace("[C]", "").replace("[G]", "") == "未来が待ってる"
+
+def test_smart_sustained_chord_skipping():
+    # 改行（窓の開始）の直後（閾値以内）に別のコードチェンジがある場合、
+    # 直前の持続コードが改行の先頭に補填されて重複表示されないことを検証。
+    structured_data = [
+        # 窓1 (0.0s - 4.0s) の最後のビートで Em が発生
+        {"bar": 3, "beat": 3, "time": 2.5, "chord": "C", "section": ""},
+        {"bar": 4, "beat": 1, "time": 3.2, "chord": "Em", "section": ""},
+        # 窓2 (4.0s - 8.0s) の開始直後 (4.2s) に F が発生
+        {"bar": 5, "beat": 1, "time": 4.2, "chord": "F", "section": ""},
+        {"bar": 6, "beat": 1, "time": 5.2, "chord": "G", "section": ""}
+    ]
+    # display_phrases
+    display_phrases = [
+        {"start": 0.0, "end": 3.5, "text": "未来が僕を待ってる", "words": [
+            {"start": 0.0, "end": 1.5, "word": "未来が"},
+            {"start": 1.5, "end": 3.5, "word": "僕を待ってる"}
+        ]},
+        {"start": 4.0, "end": 7.5, "text": "生まれたての太陽と", "words": [
+            {"start": 4.0, "end": 5.5, "word": "生まれたての"},
+            {"start": 5.5, "end": 7.5, "word": "太陽と"}
+        ]}
+    ]
+    
+    # 窓の切り分け位置となる bar_positions (1.0秒間隔で8小節定義)
+    bar_positions = [0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]
+    
+    chordpro_text, timings = structured_to_chordpro(
+        structured_data,
+        display_phrases=display_phrases,
+        beats_per_bar=4,
+        bar_positions=bar_positions
+    )
+    
+    # 1行目は [C] ... [Em] ... となるはず
+    # 2行目は、先頭の [Em] がスキップされて [F]生まれたての ... となるはず (重複 [Em] は無い)
+    lines = [line.strip() for line in chordpro_text.split('\n') if line.strip() and not line.startswith('{')]
+    
+    print("Generated lines:")
+    for l in lines:
+        print(f"-> {l}")
+    
+    # lines が 2 行以上あること
+    assert len(lines) >= 2
+    
+    # 1行目に C と Em が含まれていること
+    assert "[C]" in lines[0]
+    assert "[Em]" in lines[0]
+    
+    # 2行目に Em が含まれておらず、F があること
+    assert "[Em]" not in lines[1]
+    assert "[F]" in lines[1]
