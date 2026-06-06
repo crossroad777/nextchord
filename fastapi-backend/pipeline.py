@@ -1910,8 +1910,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             print(f"[{session_id}] Key estimates: madmom={madmom_key}, chroma={chroma_key}, chord={chord_key}")
             perf_log.append(f"Key estimates: madmom={madmom_key}, chroma={chroma_key}, chord={chord_key}")
             perf_log.append(f"Key selected: {final_key} ({method})")
-            print(f"[{session_id}] Key selected: {final_key} ({method})")
             session_data["key"] = final_key
+            _update_step(session_data, "key", f"[OK] キー検出 ({time.time() - start_total:.0f}s)")
             
             # 推定キーで1回だけダイアトニック正規化
             raw_chords = [e["chord"] for e in structured]
