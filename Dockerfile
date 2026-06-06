@@ -7,7 +7,7 @@ FROM node:20-slim AS frontend-builder
 WORKDIR /build
 COPY nextchord-ui/package*.json ./
 RUN npm ci
-ARG CACHEBUST=1
+ARG CACHEBUST=2
 COPY nextchord-ui/ ./
 # Production build - API calls go to same origin
 ENV VITE_API_URL=""
