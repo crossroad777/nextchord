@@ -2044,13 +2044,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             import subprocess, os
             ffmpeg = os.getenv("FFMPEG_PATH", "ffmpeg")
             try:
-                # 非同期変換: Popenでバックグラウンド実行し、パイプライン完了を先に報告する。
-                # MP3が未完成の間はブラウザがWAVにフォールバックする。
-                subprocess.Popen(
+                subprocess.run(
                     [ffmpeg, "-y", "-i", str(wav_path), "-b:a", "192k", str(mp3_path)],
-                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+                    check=True, capture_output=True, timeout=60
                 )
-                print(f"[{session_id}] [MP3] Async conversion started (browser uses WAV until ready)")
+                print(f"[{session_id}] [MP3] Converted for browser playback: {mp3_path.stat().st_size // 1024}KB")
             except Exception as e:
                 print(f"[{session_id}] [MP3] Conversion failed: {e} (browser will use WAV)")
         
