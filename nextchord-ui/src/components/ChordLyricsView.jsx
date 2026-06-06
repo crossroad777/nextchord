@@ -647,11 +647,36 @@ export function ChordLyricsView({
                 // Fuzzy match words from lyricsPhrases (within 1s tolerance)
                 let matchedWords = p.words || null;
                 if (!matchedWords && lyricsPhrases) {
+                    const pEnd = p.end ?? p.endTime ?? (start + 3);
                     for (const lp of lyricsPhrases) {
                         const lpStart = lp.start ?? lp.startTime ?? 0;
                         if (lp.words?.length && Math.abs(lpStart - start) < 1.0) {
-                            matchedWords = lp.words;
+                            // Filter words to this displayPhrase's time range
+                            // to prevent duplication when lyricPhrase spans multiple displayPhrases
+                            matchedWords = lp.words.filter(w => {
+                                const ws = w.start ?? w.s ?? 0;
+                                return ws >= start - 0.3 && ws < pEnd + 0.3;
+                            });
+                            if (matchedWords.length === 0) matchedWords = null;
                             break;
+                        }
+                    }
+                    // If no exact start match, try overlap-based matching
+                    if (!matchedWords) {
+                        const pEnd = p.end ?? p.endTime ?? (start + 3);
+                        for (const lp of lyricsPhrases) {
+                            if (!lp.words?.length) continue;
+                            const lpStart = lp.start ?? lp.startTime ?? 0;
+                            const lpEnd = lp.end ?? lp.endTime ?? (lpStart + 3);
+                            // Check if time ranges overlap
+                            if (lpStart < pEnd + 0.3 && lpEnd > start - 0.3) {
+                                matchedWords = lp.words.filter(w => {
+                                    const ws = w.start ?? w.s ?? 0;
+                                    return ws >= start - 0.3 && ws < pEnd + 0.3;
+                                });
+                                if (matchedWords.length > 0) break;
+                                matchedWords = null;
+                            }
                         }
                     }
                 }
