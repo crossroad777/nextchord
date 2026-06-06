@@ -653,7 +653,7 @@ def download_youtube_audio(url: str, output_dir: Path, cookies_content: Optional
             "--impersonate", "chrome",
             "--js-runtimes", "deno:/usr/bin/deno",
             "--extractor-args", "youtube:player-client=mweb,default",
-            "-f", "bestaudio/best",
+            "-f", "bestaudio*/best",
             "-x",
             "--audio-format", "wav",
             "--audio-quality", "0",
