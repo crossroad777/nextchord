@@ -5,13 +5,13 @@
 # --- Stage 1: Build Frontend ---
 FROM node:20-slim AS frontend-builder
 WORKDIR /build
-ARG CACHEBUST=3
 COPY nextchord-ui/package*.json ./
 RUN npm ci
 COPY nextchord-ui/ ./
 # Production build - API calls go to same origin
 ENV VITE_API_URL=""
-RUN npm run build && echo "CACHEBUST=3 rebuild at $(date)"
+# v0.1.0-fix: lyric dedup + ytdlp SABR fix (2026-06-06T17:34)
+RUN npm run build
 
 # --- Stage 2: Backend + Serve Frontend ---
 FROM python:3.11-slim
