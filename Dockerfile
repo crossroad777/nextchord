@@ -5,13 +5,13 @@
 # --- Stage 1: Build Frontend ---
 FROM node:20-slim AS frontend-builder
 WORKDIR /build
+ARG CACHEBUST=3
 COPY nextchord-ui/package*.json ./
 RUN npm ci
-ARG CACHEBUST=2
 COPY nextchord-ui/ ./
 # Production build - API calls go to same origin
 ENV VITE_API_URL=""
-RUN npm run build && echo "Cache bust for Latency removal"
+RUN npm run build && echo "CACHEBUST=3 rebuild at $(date)"
 
 # --- Stage 2: Backend + Serve Frontend ---
 FROM python:3.11-slim
