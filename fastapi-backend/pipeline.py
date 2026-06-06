@@ -58,7 +58,8 @@ _EMOJI_RE = _re.compile(
 _KNOWN_HALLUCINATIONS = [
     'soundhodori', 'sound hodori', '사운드호돌이',
     'サウンドホドリ', 'サウンドゥホドリ', 'ホドリ', 'hodori',
-    'instagram', 'tiktok',
+    'instagram', 'tiktok', 'インスタグラム', 'インスタ', 'ティックトック',
+    'フォロー', 'サブスクライブ',
     'thank you for watching', 'thanks for watching',
     'please subscribe', 'like and subscribe',
     'music by', 'subtitles by',
