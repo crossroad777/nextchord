@@ -1474,23 +1474,20 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         
         # === BPM 倍取り補正 ===
         raw_bpm = bpm
-        if bpm > 200 and len(v_time) > 4:
+        if bpm > 130 and len(v_time) > 4:
             half_bpm = bpm / 2
             half_beats = v_time[::2]
             half_intervals = np.diff(half_beats)
             cv_half = np.std(half_intervals) / np.mean(half_intervals) if np.mean(half_intervals) > 0 else 999
             cv_full = np.std(intervals) / np.mean(intervals) if np.mean(intervals) > 0 else 999
             
-            if cv_half < 0.25 and 60 <= half_bpm <= 160 and cv_half <= cv_full * 1.5:
+            if cv_half < 0.25 and 60 <= half_bpm <= 130 and cv_half <= cv_full * 1.5:
                 print(f"[{session_id}] [BPM] Half-tempo correction: {raw_bpm:.1f} -> {half_bpm:.1f} BPM (CV: full={cv_full:.3f}, half={cv_half:.3f})")
                 bpm = half_bpm
                 v_time = np.array(half_beats)
                 perf_log.append(f"BPM correction: {raw_bpm:.1f} -> {half_bpm:.1f} (half-tempo, beats: {len(v_time)})")
             else:
                 print(f"[{session_id}] [BPM] No half-tempo correction needed: {raw_bpm:.1f} BPM (CV: full={cv_full:.3f}, half={cv_half:.3f})")
-        else:
-            if bpm > 160:
-                print(f"[{session_id}] [BPM] Tempo {raw_bpm:.1f} BPM is in fingerpicking range (160-200), no correction applied")
         
         session_data["bpm"] = round(bpm, 1)
         

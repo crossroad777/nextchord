@@ -12,9 +12,6 @@ const TUNINGS = [
   { value: 'standard', label: 'レギュラー' },
   { value: 'half_down', label: '半音下げ' },
   { value: 'drop_d', label: 'ドロップD' },
-  { value: 'open_g', label: 'オープンG' },
-  { value: 'open_d', label: 'オープンD' },
-  { value: 'dadgad', label: 'DADGAD' },
 ];
 
 /** 音量コントロール */
@@ -129,6 +126,22 @@ export function ResultHeader({
   const duration = audioRef.current?.duration || 0;
   const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
 
+  const originalBpm = session?.result?.bpm || 120;
+  const currentBpm = Math.round(originalBpm * playbackRate);
+
+  const handleBpmChange = useCallback((newBpm) => {
+    if (!originalBpm) return;
+    const minBpm = Math.round(originalBpm * 0.5);
+    const maxBpm = Math.round(originalBpm * 2.0);
+    const clampedBpm = Math.max(minBpm, Math.min(maxBpm, newBpm));
+    const newRate = clampedBpm / originalBpm;
+    setPlaybackRate(Math.max(0.5, Math.min(2.0, Math.round(newRate * 100) / 100)));
+  }, [originalBpm, setPlaybackRate]);
+
+  const decreaseBpm = useCallback(() => handleBpmChange(currentBpm - 1), [currentBpm, handleBpmChange]);
+  const increaseBpm = useCallback(() => handleBpmChange(currentBpm + 1), [currentBpm, handleBpmChange]);
+  const resetBpm = useCallback(() => setPlaybackRate(1.0), [setPlaybackRate]);
+
   return (
     <>
       {/* 1. Song Header + 曲情報バッジ */}
@@ -151,9 +164,14 @@ export function ResultHeader({
             Key: {getTransposedKey(session.result?.key, transpose - capo - (tuning === 'half_down' ? -1 : 0)) || '--'}{capo > 0 ? ` (Capo ${capo})` : ''}
           </span>
           <span className="px-3 py-1.5 bg-[var(--gf-surface-2)] rounded-lg text-[11px] font-black text-[var(--gf-amber)] border border-[var(--gf-border)]">
-            ♩ {session.result?.bpm ? Math.round(session.result.bpm) : '--'} BPM
+            ♩ {currentBpm || '--'} BPM
           </span>
-          <Metronome bpm={Math.round((session?.result?.bpm || 120) * (playbackRate || 1))} />
+          <Metronome 
+            bpm={currentBpm} 
+            audioRef={audioRef}
+            isPlaying={isPlaying}
+            structuredData={session?.result?.structured_data}
+          />
         </div>
         <div className="flex items-center gap-2 flex-shrink-0 ml-4">
           <button onClick={handleShare} className="p-2.5 bg-[var(--gf-surface-2)] text-[var(--gf-text-dim)] hover:text-[var(--gf-amber)] rounded-xl transition-all border border-[var(--gf-border)]" aria-label="Share link"><Share2 size={18} /></button>
@@ -196,14 +214,21 @@ export function ResultHeader({
 
       {/* 3. Feature Ribbon */}
       <div className="nc-ribbon scrollbar-hide" role="toolbar" aria-label="Playback and display options">
-        {/* Speed */}
+        {/* Speed (BPM Linked) */}
         <div className="nc-ribbon-item">
           <div className="flex items-center gap-1 mb-1">
-            <button onClick={() => setPlaybackRate(r => Math.max(0.5, Math.round((r - 0.05) * 100) / 100))}><ChevronLeft size={14} /></button>
-            <span className="text-sm font-black italic text-[var(--gf-text)] w-10 text-center">{Math.round(playbackRate * 100)}%</span>
-            <button onClick={() => setPlaybackRate(r => Math.min(2.0, Math.round((r + 0.05) * 100) / 100))}><ChevronRight size={14} /></button>
+            <button onClick={decreaseBpm} title="BPMを下げる"><ChevronLeft size={14} /></button>
+            <span 
+              className="text-sm font-black italic text-[var(--gf-text)] w-16 text-center cursor-pointer hover:text-[var(--gf-amber)] transition-colors"
+              style={{ fontFamily: 'Outfit, sans-serif' }}
+              onDoubleClick={resetBpm}
+              title="ダブルクリックで元のテンポにリセット"
+            >
+              ♩ {currentBpm}
+            </span>
+            <button onClick={increaseBpm} title="BPMを上げる"><ChevronRight size={14} /></button>
           </div>
-          <span className="nc-ribbon-label">{Math.round((session?.result?.bpm || 120) * playbackRate)} BPM</span>
+          <span className="nc-ribbon-label">速度: {Math.round(playbackRate * 100)}%</span>
         </div>
 
         {/* Loop */}

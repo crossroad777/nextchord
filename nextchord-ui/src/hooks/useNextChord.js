@@ -984,13 +984,30 @@ export function useNextChord() {
     if (!session?.data) return;
     pushUndo();
     const newData = [...session.data];
-    if (newChord === '' || newChord === 'N.C.') {
-      newData[index] = { ...newData[index], chord: 'N.C.', _edited: true };
+    const oldChord = newData[index].chord;
+
+    // Find contiguous range of the same chord around the clicked index
+    let startIdx = index;
+    while (startIdx > 0 && newData[startIdx - 1].chord === oldChord) {
+      startIdx--;
+    }
+    let endIdx = index;
+    while (endIdx < newData.length - 1 && newData[endIdx + 1].chord === oldChord) {
+      endIdx++;
+    }
+
+    // Update the entire contiguous block
+    const finalChord = newChord || 'N.C.';
+    for (let i = startIdx; i <= endIdx; i++) {
+      newData[i] = { ...newData[i], chord: finalChord, _edited: true };
+    }
+
+    if (finalChord === 'N.C.') {
       showToast('コードを削除しました');
     } else {
-      newData[index] = { ...newData[index], chord: newChord, _edited: true };
-      showToast(`コードを "${newChord}" に変更しました`);
+      showToast(`コードを "${finalChord}" に変更しました`);
     }
+
     setSession(prev => ({ ...prev, data: newData }));
     saveChordEdits(newData);
   };
@@ -1011,6 +1028,28 @@ export function useNextChord() {
     }
   };
 
+  const fetchUpdatedResult = async () => {
+    if (!session?.id) return;
+    try {
+      const res = await fetch(`${getApiBase()}/result/${session.id}`);
+      if (!res.ok) throw new Error("Failed to fetch updated result");
+      const result = await res.json();
+      setSession(prev => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          result,
+          data: result.structured_data,
+          lyricsPhrases: result.lyrics_phrases || [],
+          displayPhrases: result.display_phrases || [],
+          barPositions: result.bar_positions || null,
+        };
+      });
+    } catch (e) {
+      console.warn("Failed to fetch updated result:", e);
+    }
+  };
+
   const saveChordEdits = async (newData) => {
     if (!session?.id) return;
     try {
@@ -1023,6 +1062,7 @@ export function useNextChord() {
             .filter(Boolean)
         })
       });
+      await fetchUpdatedResult();
     } catch (e) {
       console.warn('Chord save failed:', e);
     }
@@ -1031,8 +1071,17 @@ export function useNextChord() {
   const handleLyricEdit = (startTime, newText) => {
     if (!session?.displayPhrases) return;
     pushUndo();
+    let closestPhrase = null;
+    let minDiff = Infinity;
+    for (const p of session.displayPhrases) {
+      const diff = Math.abs(p.start - startTime);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestPhrase = p;
+      }
+    }
     const newPhrases = session.displayPhrases.map(p => {
-      if (Math.abs(p.start - startTime) < 0.2) {
+      if (p === closestPhrase) {
         return { ...p, text: newText };
       }
       return p;
@@ -1050,6 +1099,7 @@ export function useNextChord() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ display_phrases: phrases })
       });
+      await fetchUpdatedResult();
     } catch (e) {
       console.warn('Lyric save failed:', e);
     }

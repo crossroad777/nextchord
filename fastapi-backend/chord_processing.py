@@ -17,13 +17,16 @@ from collections import Counter
 
 def analyze_sections(y, sr):
     """
-    楽曲の構造（イントロ、サビ等）を解析する
+    楽曲の構造（イントロ、Aメロ等）を解析する
     現在は固定8等分ラベリング（将来的にAIベースの構造解析に置き換え予定）
+    
+    注意: 実際の音楽構造解析は行っていないため、
+    "Chorus"等の具体的なラベルは付けず汎用的なVerse A/B/Cを使用する。
     """
     try:
         dur = librosa.get_duration(y=y, sr=sr)
         chunk = dur / 8
-        labels = ["Intro", "Verse A", "Chorus", "Verse B", "Chorus", "Bridge", "Chorus", "Outro"]
+        labels = ["Intro", "Verse A", "Verse B", "Verse A", "Verse B", "Bridge", "Verse A", "Outro"]
         return [(i * chunk, (i+1) * chunk, labels[i]) for i in range(8)]
     except Exception as e:
         print(f"Section analysis error: {e}")
@@ -275,26 +278,22 @@ def _smooth_beat_chords(beat_chords, beats_per_bar=4, min_beats=3):
     return result
 
 
-# =========================================================================
-# エンハーモニック表記マッピング
-# =========================================================================
-
-# ♯系キーで使うマッピング
-_ENHARMONIC_MAP = {
-    "Db": "C#", "Dbm": "C#m", "Db7": "C#7", "Dbmaj7": "C#maj7", "Dbm7": "C#m7",
-    "Eb": "D#", "Ebm": "D#m", "Eb7": "D#7",
-    "Gb": "F#", "Gbm": "F#m", "Gb7": "F#7",
-    "Ab": "G#", "Abm": "G#m", "Ab7": "G#7",
-    "Bb": "A#", "Bbm": "A#m", "Bb7": "A#7",
+# ♯系キーで使うルートマッピング
+_ENHARMONIC_ROOT_MAP = {
+    "Db": "C#",
+    "Eb": "D#",
+    "Gb": "F#",
+    "Ab": "G#",
+    "Bb": "A#",
 }
 
-# ♭系キーでは♭表記を優先するマッピング
-_ENHARMONIC_FLAT_MAP = {
-    "C#": "Db", "C#m": "Dbm", "C#7": "Db7",
-    "D#": "Eb", "D#m": "Ebm", "D#7": "Eb7",
-    "F#": "Gb", "F#m": "Gbm", "F#7": "Gb7",
-    "G#": "Ab", "G#m": "Abm", "G#7": "Ab7",
-    "A#": "Bb", "A#m": "Bbm", "A#7": "Bb7",
+# ♭系キーでは♭表記を優先するルートマッピング
+_ENHARMONIC_FLAT_ROOT_MAP = {
+    "C#": "Db",
+    "D#": "Eb",
+    "F#": "Gb",
+    "G#": "Ab",
+    "A#": "Bb",
 }
 
 # ♭系キー（これらのキーでは♭表記を使う）
@@ -345,22 +344,6 @@ def _normalize_chords_to_key(beat_chords, key_name):
     - 非ダイアトニックコードの強制変換（♭VII, セカンダリードミナント等は保持）
     - madmomの検出結果を音楽理論で上書き（検出精度を信頼）
     """
-    key_root = key_name.split()[0] if " " in key_name else key_name
-    use_flats = key_root in _FLAT_KEYS
-    enharmonic = _ENHARMONIC_FLAT_MAP if use_flats else _ENHARMONIC_MAP
-    
-    # Step 1: エンハーモニック表記統一
-    normalized = []
-    enharmonic_fixes = 0
-    for chord in beat_chords:
-        if chord == "N.C.":
-            normalized.append(chord)
-        elif chord in enharmonic:
-            normalized.append(enharmonic[chord])
-            enharmonic_fixes += 1
-        else:
-            normalized.append(chord)
-    
     def _chord_root(ch):
         """コード名からルートを抽出"""
         if len(ch) > 1 and ch[1] in '#b':
@@ -371,6 +354,25 @@ def _normalize_chords_to_key(beat_chords, key_name):
         """コード名から品質(major/minor等)を抽出"""
         root = _chord_root(ch)
         return ch[len(root):]
+
+    key_root = key_name.split()[0] if " " in key_name else key_name
+    use_flats = key_root in _FLAT_KEYS
+    enharmonic_root_map = _ENHARMONIC_FLAT_ROOT_MAP if use_flats else _ENHARMONIC_ROOT_MAP
+    
+    # Step 1: エンハーモニック表記統一
+    normalized = []
+    enharmonic_fixes = 0
+    for chord in beat_chords:
+        if chord == "N.C.":
+            normalized.append(chord)
+        else:
+            root = _chord_root(chord)
+            quality = _chord_quality(chord)
+            if root in enharmonic_root_map:
+                normalized.append(f"{enharmonic_root_map[root]}{quality}")
+                enharmonic_fixes += 1
+            else:
+                normalized.append(chord)
     
     # Step 2: チャタリング除去
     # 1拍だけ異なるコードは前のコードで置換（明らかなノイズ除去）

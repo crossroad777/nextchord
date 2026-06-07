@@ -9,6 +9,9 @@
  * After kuromoji:   ["めぐり逢い", "たい"]  (proper morphological boundaries)
  */
 import kuromoji from 'kuromoji';
+import TinySegmenter from 'tiny-segmenter';
+
+const _seg = new TinySegmenter();
 
 // ── Singleton tokenizer ──────────────────────────────────────────────────
 let _tokenizer = null;
@@ -85,12 +88,64 @@ function isWordChar(ch) {
 export function resegmentWords(whisperWords) {
   if (!whisperWords || whisperWords.length === 0) return [];
   if (!_tokenizer) {
-    // Fallback: return original words as-is
-    return whisperWords.map(w => ({
-      word: w.word ?? w.w ?? '',
-      start: w.start ?? w.s ?? 0,
-      end: w.end ?? w.e ?? 0,
-    }));
+    // Fallback: Use TinySegmenter to re-segment Japanese characters into proper words
+    const fullText = whisperWords.map(w => w.word ?? w.w ?? '').join('');
+    if (fullText.length === 0) return [];
+
+    // Map characters to their original Whisper word timestamps
+    const charTimestamps = [];
+    for (let wi = 0; wi < whisperWords.length; wi++) {
+      const w = whisperWords[wi];
+      const text = w.word ?? w.w ?? '';
+      const wStart = w.start ?? w.s ?? 0;
+      const wEnd = w.end ?? w.e ?? wStart;
+      const charCount = text.length;
+      for (let ci = 0; ci < charCount; ci++) {
+        const charStart = charCount > 1
+          ? wStart + (wEnd - wStart) * (ci / charCount)
+          : wStart;
+        const charEnd = charCount > 1
+          ? wStart + (wEnd - wStart) * ((ci + 1) / charCount)
+          : wEnd;
+        charTimestamps.push({ start: charStart, end: charEnd });
+      }
+    }
+
+    const words = _seg.segment(fullText);
+    const result = [];
+    let charPos = 0;
+
+    for (const w of words) {
+      const tokenLen = w.length;
+      if (tokenLen === 0) continue;
+
+      const startCharIdx = charPos;
+      const endCharIdx = charPos + tokenLen - 1;
+
+      if (startCharIdx < charTimestamps.length && endCharIdx < charTimestamps.length) {
+        const tokenStart = charTimestamps[startCharIdx].start;
+        const tokenEnd = charTimestamps[endCharIdx].end;
+
+        const hasMeaningfulChar = [...w].some(ch => isWordChar(ch));
+        if (hasMeaningfulChar) {
+          result.push({
+            word: w,
+            start: tokenStart,
+            end: tokenEnd,
+          });
+        } else {
+          // Punctuation: attach to previous word
+          if (result.length > 0) {
+            result[result.length - 1].word += w;
+            result[result.length - 1].end = tokenEnd;
+          } else {
+            result.push({ word: w, start: tokenStart, end: tokenEnd });
+          }
+        }
+      }
+      charPos += tokenLen;
+    }
+    return result;
   }
 
   // 1. Build the full text and a char→whisperToken mapping

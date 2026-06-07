@@ -4,6 +4,12 @@ import { initTokenizer, isTokenizerReady, resegmentWords, computeBreaks } from '
 
 const _seg = new TinySegmenter();
 
+const isRhythmText = (text) => {
+    if (!text) return true;
+    const clean = text.replace(/[ \-\=>|≧○o0~^vVx×\(\)\.\*\/_]/g, '');
+    return clean.length === 0;
+};
+
 const NOTES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const NOTES_FLAT = ['C', 'Db', 'D', 'Eb', 'E', 'F', 'Gb', 'G', 'Ab', 'A', 'Bb', 'B'];
 
@@ -268,17 +274,15 @@ function splitPhraseWithWords(phraseText, phraseWords, phraseStart, phraseEnd, c
         }
         if (g === 0) startWi = 0;
 
-        // Snap to nearest natural phrase break (from spaces in lyrics)
+        // Snap to nearest natural phrase break (from morphological words)
         // Japanese phrasing: prefer splitting at natural word boundaries
         if (phraseBreaks?.length > 0 && g < numLines - 1) {
-            const groupWords = endWi - startWi;
-            const snapTolerance = groupWords > 15 ? Math.ceil(groupWords / 3) : 5;
             let bestBreak = -1;
             let bestDist = Infinity;
             for (const br of phraseBreaks) {
                 if (br <= startWi) continue;
                 const dist = Math.abs(br - endWi);
-                if (dist < bestDist && dist <= snapTolerance) {
+                if (dist < bestDist) {
                     bestDist = dist;
                     bestBreak = br;
                 }
@@ -392,36 +396,388 @@ function splitPhraseByRatio(text, phraseStart, phraseEnd, chordsInPhrase) {
     return result;
 }
 
+const DIATONIC_CHORDS = {
+  // Major keys
+  'C':  ['C', 'Dm', 'Em', 'F', 'G', 'Am', 'Bdim'],
+  'C#': ['C#', 'D#m', 'E#m', 'F#', 'G#', 'A#m', 'B#dim'],
+  'Db': ['Db', 'Ebm', 'Fm', 'Gb', 'Ab', 'Bbm', 'Cdim'],
+  'D':  ['D', 'Em', 'F#m', 'G', 'A', 'Bm', 'C#dim'],
+  'D#': ['D#', 'E#m', 'F##m', 'G#', 'A#', 'B#m', 'C##dim'],
+  'Eb': ['Eb', 'Fm', 'Gm', 'Ab', 'Bb', 'Cm', 'Ddim'],
+  'E':  ['E', 'F#m', 'G#m', 'A', 'B', 'C#m', 'D#dim'],
+  'F':  ['F', 'Gm', 'Am', 'Bb', 'C', 'Dm', 'Edim'],
+  'F#': ['F#', 'G#m', 'A#m', 'B', 'C#', 'D#m', 'E#dim'],
+  'Gb': ['Gb', 'Abm', 'Bbm', 'Cb', 'Db', 'Ebm', 'Fdim'],
+  'G':  ['G', 'Am', 'Bm', 'C', 'D', 'Em', 'F#dim'],
+  'G#': ['G#', 'A#m', 'B#m', 'C#', 'D#', 'E#m', 'F##dim'],
+  'Ab': ['Ab', 'Bbm', 'Cm', 'Db', 'Eb', 'Fm', 'Gdim'],
+  'A':  ['A', 'Bm', 'C#m', 'D', 'E', 'F#m', 'G#dim'],
+  'A#': ['A#', 'B##m', 'C##m', 'D#', 'E#', 'F##m', 'G##dim'],
+  'Bb': ['Bb', 'Cm', 'Dm', 'Eb', 'F', 'Gm', 'Adim'],
+  'B':  ['B', 'C#m', 'D#m', 'E', 'F#', 'G#m', 'A#dim'],
+
+  // Minor keys
+  'Am':  ['Am', 'Bdim', 'C', 'Dm', 'Em', 'F', 'G', 'E', 'G#dim', 'Am7', 'Dm7', 'G7', 'Cmaj7', 'Fmaj7', 'Bm7b5', 'E7'],
+  'A#m': ['A#m', 'B#dim', 'C#', 'D#m', 'E#m', 'F#', 'G#', 'E#', 'G##dim', 'A#m7', 'D#m7', 'G#7', 'C#maj7', 'F#maj7', 'B#m7b5', 'E#7'],
+  'Bbm': ['Bbm', 'Cdim', 'Db', 'Ebm', 'Fm', 'Gb', 'Ab', 'F', 'Adim', 'Bbm7', 'Ebm7', 'Ab7', 'Dbmaj7', 'Gbmaj7', 'Cm7b5', 'F7'],
+  'Bm':  ['Bm', 'C#dim', 'D', 'Em', 'F#m', 'G', 'A', 'F#', 'A#dim', 'Bm7', 'Em7', 'A7', 'Dmaj7', 'Gmaj7', 'C#m7b5', 'F#7'],
+  'Cm':  ['Cm', 'Ddim', 'Eb', 'Fm', 'Gm', 'Ab', 'Bb', 'G', 'Bdim', 'Cm7', 'Fm7', 'Bb7', 'Ebmaj7', 'Abmaj7', 'Dm7b5', 'G7'],
+  'C#m': ['C#m', 'D#dim', 'E', 'F#m', 'G#m', 'A', 'B', 'G#', 'B#dim', 'C#m7', 'F#m7', 'B7', 'Emaj7', 'Amaj7', 'D#m7b5', 'G#7'],
+  'Dm':  ['Dm', 'Edim', 'F', 'Gm', 'Am', 'Bb', 'C', 'A', 'C#dim', 'Dm7', 'Gm7', 'C7', 'Fmaj7', 'Bbmaj7', 'Em7b5', 'A7'],
+  'D#m': ['D#m', 'E#dim', 'F#', 'G#m', 'A#m', 'B', 'C#', 'A#', 'C##dim', 'D#m7', 'G#m7', 'C#7', 'F#maj7', 'Bmaj7', 'E#m7b5', 'A#7'],
+  'Ebm': ['Ebm', 'Fdim', 'Gb', 'Abm', 'Bbm', 'Cb', 'Db', 'Bb', 'Ddim', 'Ebm7', 'Abm7', 'Db7', 'Gbmaj7', 'Cbmaj7', 'Fm7b5', 'Bb7'],
+  'Em':  ['Em', 'F#dim', 'G', 'Am', 'Bm', 'C', 'D', 'B', 'D#dim', 'Em7', 'Am7', 'D7', 'Gmaj7', 'Cmaj7', 'F#m7b5', 'B7'],
+  'Fm':  ['Fm', 'Gdim', 'Ab', 'Bbm', 'Cm', 'Db', 'Eb', 'C', 'Edim', 'Fm7', 'Bbm7', 'Eb7', 'Abmaj7', 'Dbmaj7', 'Gm7b5', 'C7'],
+  'F#m': ['F#m', 'G#dim', 'A', 'Bm', 'C#m', 'D', 'E', 'C#', 'E#dim', 'F#m7', 'Bm7', 'E7', 'Amaj7', 'Dmaj7', 'G#m7b5', 'C#7'],
+  'Gm':  ['Gm', 'Adim', 'Bb', 'Cm', 'Dm', 'Eb', 'F', 'D', 'F#dim', 'Gm7', 'Cm7', 'F7', 'Bbmaj7', 'Ebmaj7', 'Am7b5', 'D7'],
+  'G#m': ['G#m', 'A#dim', 'B', 'C#m', 'D#m', 'E', 'F#', 'D#', 'F##dim', 'G#m7', 'C#m7', 'F#7', 'Bmaj7', 'Emaj7', 'A#m7b5', 'D#7'],
+};
+
 // ── Editable chord label ──────────────────────────────────────────────────
-function EditableChord({ chord, time, onChordEdit, onChordHover }) {
+function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEditingStateChange }) {
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(chord);
     const inputRef = useRef(null);
+    const containerRef = useRef(null);
+
     useEffect(() => { setValue(chord); }, [chord]);
     useEffect(() => { if (editing && inputRef.current) inputRef.current.focus(); }, [editing]);
-    const commit = () => {
+
+    useEffect(() => {
+        if (onEditingStateChange) onEditingStateChange(editing);
+        return () => {
+            if (onEditingStateChange) onEditingStateChange(false);
+        };
+    }, [editing, onEditingStateChange]);
+
+    useEffect(() => {
+        if (!editing) return;
+        const handleClickOutside = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                commit();
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, [editing, value]);
+
+    const commit = (val = value) => {
         setEditing(false);
-        if (value !== chord && onChordEdit) onChordEdit(time, value);
+        if (val !== chord && onChordEdit) onChordEdit(time, val);
     };
+
+    const { diatonic, common } = useMemo(() => {
+        let diatonicList = [];
+        if (songKey) {
+            const cleanKey = songKey.replace(' major', '').replace(' minor', 'm');
+            diatonicList = DIATONIC_CHORDS[cleanKey] || [];
+        }
+        const defaults = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'Cm', 'Dm', 'Em', 'Fm', 'Gm', 'Am', 'Bm'];
+        const commonList = defaults.filter(c => !diatonicList.includes(c));
+        return { diatonic: diatonicList, common: commonList };
+    }, [songKey]);
+
+    const renderCandidateButton = (cand, isDiatonic) => {
+        const isSelected = value === cand;
+        return (
+            <button
+                key={cand}
+                onClick={(e) => {
+                    e.stopPropagation();
+                    setValue(cand);
+                    commit(cand);
+                }}
+                style={{
+                    padding: '6px 4px',
+                    background: isSelected 
+                        ? 'linear-gradient(135deg, var(--gf-primary, #6366f1) 0%, #4f46e5 100%)'
+                        : isDiatonic 
+                            ? 'rgba(16, 185, 129, 0.06)' 
+                            : 'rgba(255,255,255,0.02)',
+                    border: isSelected 
+                        ? '1px solid var(--gf-primary, #6366f1)' 
+                        : isDiatonic 
+                            ? '1px solid rgba(16, 185, 129, 0.2)' 
+                            : '1px solid rgba(255,255,255,0.06)',
+                    borderRadius: '6px',
+                    color: isSelected 
+                        ? '#fff' 
+                        : isDiatonic 
+                            ? '#34d399' 
+                            : 'rgba(255,255,255,0.7)',
+                    fontSize: '11px',
+                    fontWeight: isDiatonic ? '600' : 'normal',
+                    cursor: 'pointer',
+                    textAlign: 'center',
+                    boxShadow: isSelected ? '0 4px 12px rgba(99, 102, 241, 0.35)' : 'none',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                }}
+                onMouseEnter={e => {
+                    if (!isSelected) {
+                        e.currentTarget.style.background = isDiatonic 
+                            ? 'rgba(16, 185, 129, 0.14)' 
+                            : 'rgba(255,255,255,0.08)';
+                        e.currentTarget.style.borderColor = isDiatonic 
+                            ? 'rgba(16, 185, 129, 0.35)' 
+                            : 'rgba(255,255,255,0.15)';
+                        e.currentTarget.style.color = isDiatonic ? '#34d399' : '#fff';
+                        e.currentTarget.style.transform = 'translateY(-1px)';
+                        e.currentTarget.style.boxShadow = isDiatonic
+                            ? '0 4px 12px rgba(16, 185, 129, 0.15)'
+                            : '0 4px 12px rgba(255,255,255,0.05)';
+                    }
+                }}
+                onMouseLeave={e => {
+                    if (!isSelected) {
+                        e.currentTarget.style.background = isDiatonic 
+                            ? 'rgba(16, 185, 129, 0.06)' 
+                            : 'rgba(255,255,255,0.02)';
+                        e.currentTarget.style.borderColor = isDiatonic 
+                            ? 'rgba(16, 185, 129, 0.2)' 
+                            : 'rgba(255,255,255,0.06)';
+                        e.currentTarget.style.color = isDiatonic ? '#34d399' : 'rgba(255,255,255,0.7)';
+                        e.currentTarget.style.transform = 'none';
+                        e.currentTarget.style.boxShadow = 'none';
+                    }
+                }}
+            >
+                {cand}
+            </button>
+        );
+    };
+
     if (editing) {
         return (
-            <input ref={inputRef} className="chord-edit-input" value={value}
+            <div ref={containerRef} className="chord-edit-container" onClick={e => e.stopPropagation()} style={{ position: 'relative', display: 'inline-block', zIndex: 100 }}>
+                <span className="cl-chord-text" translate="no" style={{ cursor: 'pointer', borderBottom: '1px dotted var(--gf-text-dim)', opacity: 0.3 }}>{chord}</span>
+                <div className="chord-suggestions" style={{
+                    position: 'absolute',
+                    top: '100%',
+                    left: 0,
+                    background: 'rgba(20, 20, 23, 0.85)',
+                    backdropFilter: 'blur(20px)',
+                    WebkitBackdropFilter: 'blur(20px)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
+                    borderRadius: '14px',
+                    boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.7), 0 10px 15px -5px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.05)',
+                    padding: '12px',
+                    marginTop: '6px',
+                    width: '240px',
+                    maxHeight: '320px',
+                    overflowY: 'auto',
+                    zIndex: 9999,
+                }}>
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '12px' }}>
+                        <input ref={inputRef} className="chord-edit-input" value={value}
+                            onChange={e => setValue(e.target.value)}
+                            onKeyDown={e => {
+                                if (e.key === 'Enter') commit();
+                                if (e.key === 'Escape') { setValue(chord); setEditing(false); }
+                            }}
+                            placeholder="直接入力..."
+                            style={{
+                                flex: 1,
+                                background: 'rgba(255,255,255,0.04)',
+                                color: '#fff',
+                                border: '1px solid rgba(255,255,255,0.1)',
+                                borderRadius: '8px',
+                                padding: '6px 10px',
+                                fontSize: '12px',
+                                outline: 'none',
+                                fontFamily: 'inherit',
+                                transition: 'all 0.2s',
+                            }}
+                            onFocus={e => {
+                                e.target.style.borderColor = 'var(--gf-primary, #6366f1)';
+                                e.target.style.boxShadow = '0 0 0 2px rgba(99, 102, 241, 0.2)';
+                            }}
+                            onBlur={e => {
+                                e.target.style.borderColor = 'rgba(255,255,255,0.1)';
+                                e.target.style.boxShadow = 'none';
+                            }}
+                        />
+                        <button
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setValue('N.C.');
+                                commit('N.C.');
+                            }}
+                            style={{
+                                background: 'rgba(239, 68, 68, 0.08)',
+                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                borderRadius: '8px',
+                                color: '#ef4444',
+                                padding: '6px 12px',
+                                fontSize: '11px',
+                                cursor: 'pointer',
+                                fontWeight: '600',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px',
+                                transition: 'all 0.2s',
+                            }}
+                            onMouseEnter={e => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.16)';
+                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.4)';
+                                e.currentTarget.style.transform = 'translateY(-1px)';
+                            }}
+                            onMouseLeave={e => {
+                                e.currentTarget.style.background = 'rgba(239, 68, 68, 0.08)';
+                                e.currentTarget.style.borderColor = 'rgba(239, 68, 68, 0.2)';
+                                e.currentTarget.style.transform = 'none';
+                            }}
+                            title="コードを削除 (No Chord)"
+                        >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <polyline points="3 6 5 6 21 6"></polyline>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                <line x1="10" y1="11" x2="10" y2="17"></line>
+                                <line x1="14" y1="11" x2="14" y2="17"></line>
+                            </svg>
+                            <span>削除</span>
+                        </button>
+                    </div>
+
+                    {diatonic.length > 0 && (
+                        <div style={{ marginBottom: '12px' }}>
+                            <div style={{
+                                fontSize: '10px',
+                                color: 'rgba(255,255,255,0.4)',
+                                fontWeight: '600',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                marginBottom: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                            }}>
+                                <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: '#10b981', boxShadow: '0 0 6px #10b981' }}></span>
+                                ダイアトニック ({songKey ? songKey.replace(' major', '').replace(' minor', 'm') : ''})
+                            </div>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(4, 1fr)',
+                                gap: '6px',
+                            }}>
+                                {diatonic.map(cand => renderCandidateButton(cand, true))}
+                            </div>
+                        </div>
+                    )}
+
+                    {common.length > 0 && (
+                        <div>
+                            <div style={{
+                                fontSize: '10px',
+                                color: 'rgba(255,255,255,0.4)',
+                                fontWeight: '600',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                marginBottom: '6px',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '5px',
+                            }}>
+                                <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }}></span>
+                                その他
+                            </div>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(4, 1fr)',
+                                gap: '6px',
+                            }}>
+                                {common.map(cand => renderCandidateButton(cand, false))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+    return (
+        <span className="cl-chord-text cl-chord-interactive" translate="no"
+            onClick={e => { e.stopPropagation(); setEditing(true); }}
+            onMouseEnter={() => onChordHover?.(chord)}
+            onMouseLeave={() => onChordHover?.(null)}
+            title="クリックして編集"
+            style={{ cursor: 'pointer' }}
+        >{chord}</span>
+    );
+}
+
+
+// ── Editable lyric segment ────────────────────────────────────────────────
+function EditableLyricSegment({ text, onBlur }) {
+    const [editing, setEditing] = useState(false);
+    const [value, setValue] = useState(text);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        setValue(text);
+    }, [text]);
+
+    useEffect(() => {
+        if (editing && inputRef.current) {
+            inputRef.current.focus();
+            inputRef.current.select();
+        }
+    }, [editing]);
+
+    const commit = () => {
+        setEditing(false);
+        if (value !== text && onBlur) {
+            onBlur(value);
+        }
+    };
+
+    if (editing) {
+        return (
+            <input
+                ref={inputRef}
+                className="lyric-segment-edit-input"
+                value={value}
                 onChange={e => setValue(e.target.value)}
                 onBlur={commit}
                 onKeyDown={e => {
-                    if (e.key === 'Enter') commit();
-                    if (e.key === 'Escape') { setValue(chord); setEditing(false); }
+                    if (e.key === 'Enter') {
+                        commit();
+                    }
+                    if (e.key === 'Escape') {
+                        setValue(text);
+                        setEditing(false);
+                    }
+                }}
+                style={{
+                    width: `${Math.max(value.length * 1.05 + 0.5, 1.5)}em`,
+                    background: 'var(--gf-surface-3)',
+                    color: 'var(--gf-text)',
+                    border: '1px solid var(--gf-primary)',
+                    borderRadius: '4px',
+                    padding: '2px 4px',
+                    fontSize: 'inherit',
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                    textAlign: 'center',
                 }}
             />
         );
     }
+
     return (
-        <span className="cl-chord-text" translate="no"
-            onClick={e => { e.stopPropagation(); setEditing(true); }}
-            onMouseEnter={() => onChordHover?.(chord)}
-            onMouseLeave={() => onChordHover?.(null)}
-            title="click to edit"
-        >{chord}</span>
+        <span
+            className="cl-lyric-text-segment"
+            onClick={e => {
+                e.stopPropagation();
+                setEditing(true);
+            }}
+            title="クリックして編集"
+            style={{
+                cursor: 'pointer',
+                borderBottom: '1px dashed var(--gf-text-dim)',
+                paddingBottom: '1px',
+            }}
+        >
+            {text || '\u00A0'}
+        </span>
     );
 }
 
@@ -449,7 +805,7 @@ function LyricEditLine({ text, onRef, onKeyDown, onBlur }) {
 // ══════════════════════════════════════════════════════════════════════════
 export function ChordLyricsView({
     data, lyricsPhrases, displayPhrases, barPositions, currentTime, onSeek,
-    onChordEdit, onLyricEdit, onChordHover, transpose = 0, title, artist
+    onChordEdit, onLyricEdit, onChordHover, transpose = 0, title, artist, songKey
 }) {
     const activeRef = useRef(null);
     const scrollContainerRef = useRef(null);
@@ -457,6 +813,7 @@ export function ChordLyricsView({
     const pendingFocus = useRef(null);
     const lyricEls = useRef({});
     const [kuromojiReady, setKuromojiReady] = useState(isTokenizerReady());
+    const [isChordEditing, setIsChordEditing] = useState(false);
 
     // Initialize kuromoji tokenizer once
     useEffect(() => {
@@ -535,7 +892,7 @@ export function ChordLyricsView({
     });
 
     useEffect(() => {
-        if (!autoScroll || !scrollContainerRef.current) return;
+        if (!autoScroll || !scrollContainerRef.current || isChordEditing) return;
         let id, last = performance.now();
         const step = now => {
             const dt = now - last; last = now;
@@ -544,7 +901,7 @@ export function ChordLyricsView({
         };
         id = requestAnimationFrame(step);
         return () => cancelAnimationFrame(id);
-    }, [autoScroll, scrollSpeed]);
+    }, [autoScroll, scrollSpeed, isChordEditing]);
 
     useEffect(() => {
         const t = pendingFocus.current;
@@ -681,9 +1038,9 @@ export function ChordLyricsView({
                     }
                 }
 
-                // ── kuromoji re-segmentation ──
-                // Merge Whisper character-level tokens into proper Japanese words
-                if (matchedWords && kuromojiReady) {
+                // ── morphological re-segmentation ──
+                // Merge Whisper character-level tokens into proper Japanese words (using Kuromoji or TinySegmenter fallback)
+                if (matchedWords) {
                     matchedWords = resegmentWords(matchedWords);
                 }
 
@@ -694,22 +1051,42 @@ export function ChordLyricsView({
                     : rawText;
 
                 // ── Compute line-break points ──
-                // Use kuromoji POS-based breaks when available, fall back to space-based
+                // Use kuromoji POS-based breaks when available, fall back to TinySegmenter + space-based
                 let breaks = [];
                 if (matchedWords && kuromojiReady) {
                     breaks = computeBreaks(matchedWords);
                 } else if (matchedWords) {
-                    // Fallback: extract breaks from spaces in original text
+                    // Fallback: Use TinySegmenter to segment the phraseText and find word boundaries
+                    const tsWords = _seg.segment(phraseText);
+                    let cumChars = 0;
+                    const wordBoundaries = [];
+                    for (const w of tsWords) {
+                        cumChars += w.length;
+                        wordBoundaries.push(cumChars);
+                    }
+                    
+                    // Map character boundaries to matchedWords indices
+                    let cc = 0;
+                    for (let wi = 0; wi < matchedWords.length; wi++) {
+                        cc += (matchedWords[wi].word ?? matchedWords[wi].w ?? '').length;
+                        if (wordBoundaries.includes(cc)) {
+                            breaks.push(wi + 1);
+                        }
+                    }
+                    
+                    // Also include spaces in original text as fallback breaks
                     const origText = p.text ?? p.transcript ?? '';
                     const subPhrases = origText.split(/[\s\u3000]+/).filter(s => s.length > 0);
-                    let cumChars = 0;
+                    let cumSpaceChars = 0;
                     for (let sp = 0; sp < subPhrases.length - 1; sp++) {
-                        cumChars += subPhrases[sp].length;
+                        cumSpaceChars += subPhrases[sp].length;
                         let charCount = 0;
                         for (let wi = 0; wi < matchedWords.length; wi++) {
                             charCount += (matchedWords[wi].word ?? matchedWords[wi].w ?? '').length;
-                            if (charCount >= cumChars) {
-                                breaks.push(wi + 1);
+                            if (charCount >= cumSpaceChars) {
+                                if (!breaks.includes(wi + 1)) {
+                                    breaks.push(wi + 1);
+                                }
                                 break;
                             }
                         }
@@ -756,9 +1133,10 @@ export function ChordLyricsView({
                            && cur.start >= windows[wi][0] - 0.05) {
                     // Same 4-bar window → merge
                     cur.end = p.end;
-                    cur.text = cur.text + p.text;
+                    cur.text = cur.text + " " + p.text;
                     if (cur.words && p.words) {
-                        cur.words = [...cur.words, ...p.words];
+                        const spaceWord = { word: ' ', w: ' ', start: p.start, s: p.start, end: p.start, e: p.start };
+                        cur.words = [...cur.words, spaceWord, ...p.words];
                     } else {
                         cur.words = null; // Can't merge word timestamps
                     }
@@ -856,13 +1234,13 @@ export function ChordLyricsView({
     }, [lines.length]);
 
     useEffect(() => {
-        if (!activeRef.current || autoScroll) return;
+        if (!activeRef.current || autoScroll || isChordEditing) return;
         if (activeIdx <= 5) return;
         const rect = activeRef.current.getBoundingClientRect();
         const viewH = window.innerHeight;
         if (rect.bottom > viewH - 80 || rect.top < 80)
             activeRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    }, [activeIdx, autoScroll]);
+    }, [activeIdx, autoScroll, isChordEditing]);
 
     // ══════════════════════════════════════════════════════════════════════
     // RENDER
@@ -915,10 +1293,14 @@ export function ChordLyricsView({
                     ? lyricLines[li]
                     : (line.fullText ? [line.fullText] : []);
 
+                const isRhy = line.segments 
+                    ? line.segments.every(seg => isRhythmText(seg.text)) 
+                    : (line.fullText && isRhythmText(line.fullText));
+
                 return (
                     <div key={li}
                         ref={isActive ? activeRef : null}
-                        className={`cl-line ${isActive ? 'cl-line-active' : ''}`}
+                        className={`cl-line ${isActive ? 'cl-line-active' : ''} ${isRhy ? 'cl-rhythm-line' : ''}`}
                         onClick={() => onSeek?.(line.startTime)}
                     >
                         {line.isInstrumental && line.instrLabel && (
@@ -929,32 +1311,36 @@ export function ChordLyricsView({
 
                         {/* Segment-based: chord above corresponding lyrics */}
                         {line.segments ? (
-                            <>
-                                <div className="cl-chord-row cl-segment-row">
-                                    {line.segments.map((seg, i) => (
-                                        <span key={i} className="cl-segment"
-                                            style={{ minWidth: `${Math.max(seg.chord.length * 0.65, seg.text.length * 1.05)}em` }}>
-                                            {onChordEdit ? (
+                            <div className="cl-chord-row cl-segment-row" style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                {line.segments.map((seg, i) => (
+                                    <span key={i} className="cl-segment"
+                                        style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'flex-start', verticalAlign: 'bottom', paddingRight: '0.4em' }}>
+                                        {seg.chord ? (
+                                            onChordEdit ? (
                                                 <EditableChord chord={seg.chord} time={seg.time}
-                                                    onChordEdit={onChordEdit} onChordHover={onChordHover} />
+                                                    onChordEdit={onChordEdit} onChordHover={onChordHover} songKey={songKey}
+                                                    onEditingStateChange={setIsChordEditing} />
                                             ) : (
                                                 <span className="cl-chord-text" translate="no"
                                                     onMouseEnter={() => onChordHover?.(seg.chord)}
                                                     onMouseLeave={() => onChordHover?.(null)}
                                                 >{seg.chord}</span>
-                                            )}
-                                        </span>
-                                    ))}
-                                </div>
-                                <div className="cl-lyric-row cl-segment-row">
-                                    {line.segments.map((seg, i) => (
-                                        <span key={i} className="cl-segment cl-lyric-segment"
-                                            style={{ minWidth: `${Math.max(seg.chord.length * 0.65, seg.text.length * 1.05)}em` }}>
-                                            {seg.text}
-                                        </span>
-                                    ))}
-                                </div>
-                            </>
+                                            )
+                                        ) : (
+                                            <span className="cl-chord-text cl-chord-placeholder" style={{ visibility: 'hidden' }}>{"\u00A0"}</span>
+                                        )}
+                                        <EditableLyricSegment 
+                                            text={seg.text}
+                                            onBlur={(newSegText) => {
+                                                const updatedSegments = [...line.segments];
+                                                updatedSegments[i] = { ...seg, text: newSegText };
+                                                const newFullText = updatedSegments.map(s => s.text).join('');
+                                                onLyricEdit?.(line.startTime, newFullText);
+                                            }}
+                                        />
+                                    </span>
+                                ))}
+                            </div>
                         ) : (
                             <>
                                 {/* Fallback: old chord row + lyric row */}
@@ -962,7 +1348,8 @@ export function ChordLyricsView({
                                     {allChords.map((c, i) => (
                                         onChordEdit ? (
                                             <EditableChord key={i} chord={c.chord} time={c.time}
-                                                onChordEdit={onChordEdit} onChordHover={onChordHover} />
+                                                onChordEdit={onChordEdit} onChordHover={onChordHover} songKey={songKey}
+                                                onEditingStateChange={setIsChordEditing} />
                                         ) : (
                                             <span key={i} className="cl-chord-text" translate="no"
                                                 onMouseEnter={() => onChordHover?.(c.chord)}
@@ -989,8 +1376,7 @@ export function ChordLyricsView({
                                     />
                                 ))}
                             </>
-                        )}
-                    </div>
+                        )}                    </div>
                 );
             })}
             {lines.length === 0 && (

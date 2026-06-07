@@ -27,12 +27,17 @@ const MetronomeIcon = ({ size = 16, className = "" }) => (
  * BPMに合わせてクリック音を生成。
  * 1拍目は高い音で強調、2-4拍目は低い音。
  */
-export function Metronome({ bpm = 120, beatsPerBar = 4, isPlaying = false }) {
+
+export function Metronome({ bpm = 120, beatsPerBar = 4, isPlaying = false, audioRef, structuredData }) {
     const [active, setActive] = useState(false);
     const [currentBeat, setCurrentBeat] = useState(0);
     const [metronomeVolume, setMetronomeVolume] = useState(() =>
         parseFloat(localStorage.getItem('nc-metronome-vol') || '0.5')
     );
+    const handleVolumeChange = useCallback((v) => {
+        setMetronomeVolume(v);
+        localStorage.setItem('nc-metronome-vol', v.toString());
+    }, []);
     const audioCtxRef = useRef(null);
     const timerRef = useRef(null);
     const beatRef = useRef(0);
@@ -79,8 +84,88 @@ export function Metronome({ bpm = 120, beatsPerBar = 4, isPlaying = false }) {
         }
     }, [bpm, beatsPerBar, playClick, getAudioContext]);
 
+    // Active ref for requestAnimationFrame loop
+    const activeRef = useRef(active);
     useEffect(() => {
-        if (active) {
+        activeRef.current = active;
+    }, [active]);
+
+    const lastAudioTimeRef = useRef(0);
+    const lastCheckedBeatIdxRef = useRef(-1);
+
+    // Audio Playback-locked metronome loop (when playing)
+    useEffect(() => {
+        if (!active || !isPlaying || !audioRef?.current || !structuredData?.length) {
+            return;
+        }
+
+        const audio = audioRef.current;
+        const ctx = getAudioContext();
+        if (ctx.state === 'suspended') ctx.resume();
+
+        // Initialize / Reset tracking on play
+        lastAudioTimeRef.current = audio.currentTime;
+        
+        let initialIdx = -1;
+        for (let i = 0; i < structuredData.length; i++) {
+            if (structuredData[i].time <= audio.currentTime) {
+                initialIdx = i;
+            } else {
+                break;
+            }
+        }
+        lastCheckedBeatIdxRef.current = initialIdx;
+
+        let frameId = null;
+
+        const loop = () => {
+            if (!activeRef.current) return;
+
+            const audioCurrentTime = audio.currentTime;
+            const delta = audioCurrentTime - lastAudioTimeRef.current;
+
+            // Handle seeks or loops
+            if (Math.abs(delta) > 0.5) {
+                let bestIdx = -1;
+                for (let i = 0; i < structuredData.length; i++) {
+                    if (structuredData[i].time <= audioCurrentTime) {
+                        bestIdx = i;
+                    } else {
+                        break;
+                    }
+                }
+                lastCheckedBeatIdxRef.current = bestIdx;
+            } else if (delta > 0) {
+                // Audio is playing forward
+                let idx = lastCheckedBeatIdxRef.current + 1;
+                while (idx < structuredData.length && structuredData[idx].time <= audioCurrentTime) {
+                    const beatObj = structuredData[idx];
+                    
+                    if (beatObj.time > lastAudioTimeRef.current) {
+                        const isAccent = beatObj.beat === 1;
+                        playClick(ctx.currentTime, isAccent);
+                        setCurrentBeat(beatObj.beat - 1);
+                    }
+                    
+                    lastCheckedBeatIdxRef.current = idx;
+                    idx++;
+                }
+            }
+
+            lastAudioTimeRef.current = audioCurrentTime;
+            frameId = requestAnimationFrame(loop);
+        };
+
+        frameId = requestAnimationFrame(loop);
+
+        return () => {
+            if (frameId) cancelAnimationFrame(frameId);
+        };
+    }, [active, isPlaying, audioRef, structuredData, playClick, getAudioContext]);
+
+    // Steady BPM metronome loop (when paused or stopped)
+    useEffect(() => {
+        if (active && (!isPlaying || !audioRef?.current || !structuredData?.length)) {
             const ctx = getAudioContext();
             if (ctx.state === 'suspended') ctx.resume();
             beatRef.current = 0;
@@ -91,28 +176,25 @@ export function Metronome({ bpm = 120, beatsPerBar = 4, isPlaying = false }) {
                 clearInterval(timerRef.current);
                 timerRef.current = null;
             }
-            setCurrentBeat(0);
+            if (!active) {
+                setCurrentBeat(0);
+            }
         }
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
-    }, [active, scheduleBeats, getAudioContext]);
+    }, [active, isPlaying, audioRef, structuredData, scheduleBeats, getAudioContext]);
 
-    // BPM変更時にリスタート
+    // Restart timer when BPM changes in paused state
     useEffect(() => {
-        if (active && timerRef.current) {
+        if (active && timerRef.current && (!isPlaying || !audioRef?.current || !structuredData?.length)) {
             clearInterval(timerRef.current);
             const ctx = getAudioContext();
             nextNoteTimeRef.current = ctx.currentTime + 0.05;
             beatRef.current = 0;
             timerRef.current = setInterval(scheduleBeats, 25);
         }
-    }, [bpm]);
-
-    const handleVolumeChange = (v) => {
-        setMetronomeVolume(v);
-        localStorage.setItem('nc-metronome-vol', v.toString());
-    };
+    }, [bpm, active, isPlaying, audioRef, structuredData, scheduleBeats, getAudioContext]);
 
     const toggle = () => setActive(a => !a);
 

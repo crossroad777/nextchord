@@ -154,6 +154,11 @@ export default function NextChordApp() {
                 artist={app.session.artist}
                 lineTimings={chordproLineTimings}
                 tuning={app.tuning}
+                onChordEdit={app.handleChordEditByTime}
+                onLyricEdit={app.handleLyricEdit}
+                onChordHover={setHoveredChord}
+                songKey={app.session.result?.key || app.session.key}
+                session={app.session}
               />
             ) : (
               <div className="overflow-y-auto py-10 px-8 h-full">
@@ -171,6 +176,7 @@ export default function NextChordApp() {
                     transpose={app.transpose - app.capo - getTuningOffset(app.tuning)} 
                     title={app.session.fileName} 
                     artist={app.session.artist} 
+                    songKey={app.session.result?.key || app.session.key}
                   />
                 </div>
               </div>

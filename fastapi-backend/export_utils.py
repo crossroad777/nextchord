@@ -399,6 +399,8 @@ def create_text_score(chordpro_text):
             if inner:
                 val = inner.group(1).strip()
                 if line.startswith('{c:'):
+                    if lines and lines[-1] != "":
+                        lines.append("")
                     lines.append(f"[{val}]")
                 else:
                     lines.append(val)

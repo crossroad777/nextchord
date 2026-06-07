@@ -449,6 +449,11 @@ def _get_diatonic_chords(key_name):
     return list(set(diatonic))
 
 
+def _is_protected_quality(chord_name: str) -> bool:
+    """Check if the chord has a special quality that should be protected from correction."""
+    return any(q in chord_name for q in ['dim', 'aug', 'm6', 'm7(b5)', 'm7b5', 'mM7', 'mMaj7'])
+
+
 def verify_and_correct_chords(
     beat_chords,
     beat_times,
@@ -531,7 +536,8 @@ def verify_and_correct_chords(
         scores.append(orig_score)
 
         # スコアが低い → 多重証拠投票で最適コードを選択
-        if orig_score < correction_threshold:
+        # 特殊なクオリティ(dim, aug, m6など)は補正から保護する
+        if orig_score < correction_threshold and not _is_protected_quality(chord_name):
             # 全候補のクロマスコアを計算
             chroma_scores_dict = {}
             for cand in candidate_chords:

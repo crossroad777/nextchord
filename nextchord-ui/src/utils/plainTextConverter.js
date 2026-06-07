@@ -186,8 +186,7 @@ export function plainTextToChordpro(plainText) {
                 // 歌詞がないコード行のみの場合（[C] [G] のように変換、小節線も含む）
                 const itemRegex = /\||[A-Ga-g][A-Za-z0-9#\+\-\/\(\)]*/g;
                 let merged = line.replace(itemRegex, match => `[${match}]`);
-                merged = merged.replace(/\s+/g, ' ').trim();
-                result += merged + '\n';
+                result += merged.trimEnd() + '\n';
             }
         } else {
             // 単なる歌詞行（または空行）

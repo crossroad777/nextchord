@@ -91,11 +91,119 @@ const CHORD_SHAPES = {
     "Gadd9": { name: "Gadd9", frets: [3, 2, 0, 2, 0, 3] },
     "Eadd9": { name: "Eadd9", frets: [0, 2, 2, 1, 0, 2] },
 
-    // dim / aug
-    "Bdim": { name: "Bdim", frets: [-1, 2, 3, 4, 3, -1] },
+    // dim
     "Cdim": { name: "Cdim", frets: [-1, 3, 4, 5, 4, -1] },
+    "C#dim": { name: "C♯dim", frets: [-1, 4, 5, 6, 5, -1] },
+    "Dbdim": { name: "D♭dim", frets: [-1, 4, 5, 6, 5, -1] },
+    "Ddim": { name: "Ddim", frets: [-1, -1, 0, 1, 3, 1] },
+    "D#dim": { name: "D♯dim", frets: [-1, -1, 1, 2, 4, 2] },
+    "Ebdim": { name: "E♭dim", frets: [-1, -1, 1, 2, 4, 2] },
+    "Edim": { name: "Edim", frets: [-1, -1, 2, 3, 5, 3] },
+    "Fdim": { name: "Fdim", frets: [-1, -1, 3, 4, 6, 4] },
+    "F#dim": { name: "F♯dim", frets: [2, -1, 0, 2, 1, 2] },
+    "Gbdim": { name: "G♭dim", frets: [2, -1, 0, 2, 1, 2] },
+    "Gdim": { name: "Gdim", frets: [-1, -1, 5, 6, 8, 6] },
+    "G#dim": { name: "G♯dim", frets: [-1, -1, 6, 7, 9, 7] },
+    "Abdim": { name: "A♭dim", frets: [-1, -1, 6, 7, 9, 7] },
+    "Adim": { name: "Adim", frets: [-1, 0, 1, 2, 1, -1] },
+    "A#dim": { name: "A♯dim", frets: [-1, 1, 2, 3, 2, -1] },
+    "Bbdim": { name: "B♭dim", frets: [-1, 1, 2, 3, 2, -1] },
+    "Bdim": { name: "Bdim", frets: [-1, 2, 3, 4, 3, -1] },
+
+    // dim7
+    "Cdim7": { name: "Cdim7", frets: [-1, 3, 4, 2, 4, -1] },
+    "C#dim7": { name: "C♯dim7", frets: [-1, 4, 5, 3, 5, -1] },
+    "Dbdim7": { name: "D♭dim7", frets: [-1, 4, 5, 3, 5, -1] },
+    "Ddim7": { name: "Ddim7", frets: [-1, -1, 0, 1, 0, 1] },
+    "D#dim7": { name: "D♯dim7", frets: [-1, -1, 1, 2, 1, 2] },
+    "Ebdim7": { name: "E♭dim7", frets: [-1, -1, 1, 2, 1, 2] },
+    "Edim7": { name: "Edim7", frets: [-1, -1, 2, 3, 2, 3] },
+    "Fdim7": { name: "Fdim7", frets: [-1, -1, 3, 4, 3, 4] },
+    "F#dim7": { name: "F♯dim7", frets: [2, -1, 1, 2, 1, -1] },
+    "Gbdim7": { name: "G♭dim7", frets: [2, -1, 1, 2, 1, -1] },
+    "Gdim7": { name: "Gdim7", frets: [3, -1, 2, 3, 2, -1] },
+    "G#dim7": { name: "G♯dim7", frets: [4, -1, 3, 4, 3, -1] },
+    "Abdim7": { name: "A♭dim7", frets: [4, -1, 3, 4, 3, -1] },
+    "Adim7": { name: "Adim7", frets: [-1, 0, 1, 0, 1, -1] },
+    "A#dim7": { name: "A♯dim7", frets: [-1, 1, 2, 0, 2, -1] },
+    "Bbdim7": { name: "B♭dim7", frets: [-1, 1, 2, 0, 2, -1] },
+    "Bdim7": { name: "Bdim7", frets: [-1, 2, 3, 1, 3, -1] },
+
+    // aug
     "Caug": { name: "Caug", frets: [-1, 3, 2, 1, 1, 0] },
+    "C#aug": { name: "C♯aug", frets: [-1, 4, 3, 2, 2, -1] },
+    "Dbaug": { name: "D♭aug", frets: [-1, 4, 3, 2, 2, -1] },
+    "Daug": { name: "Daug", frets: [-1, -1, 0, 3, 3, 2] },
+    "D#aug": { name: "D♯aug", frets: [-1, -1, 1, 0, 0, 3] },
+    "Ebaug": { name: "E♭aug", frets: [-1, -1, 1, 0, 0, 3] },
     "Eaug": { name: "Eaug", frets: [0, 3, 2, 1, 1, 0] },
+    "Faug": { name: "Faug", frets: [-1, -1, 3, 2, 2, 1] },
+    "F#aug": { name: "F♯aug", frets: [-1, -1, 4, 3, 3, 2] },
+    "Gbaug": { name: "G♭aug", frets: [-1, -1, 4, 3, 3, 2] },
+    "Gaug": { name: "Gaug", frets: [3, 2, 1, 0, 0, 3] },
+    "G#aug": { name: "G♯aug", frets: [-1, -1, 6, 5, 5, 4] },
+    "Abaug": { name: "A♭aug", frets: [-1, -1, 6, 5, 5, 4] },
+    "Aaug": { name: "Aaug", frets: [-1, 0, 3, 2, 2, 1] },
+    "A#aug": { name: "A♯aug", frets: [-1, 1, 4, 3, 3, 2] },
+    "Bbaug": { name: "B♭aug", frets: [-1, 1, 4, 3, 3, 2] },
+    "Baug": { name: "Baug", frets: [-1, 2, 5, 4, 4, 3] },
+
+    // m6
+    "Cm6": { name: "Cm6", frets: [-1, 3, 1, 2, 1, 3] },
+    "C#m6": { name: "C♯m6", frets: [-1, 4, 2, 3, 2, 4] },
+    "Dbm6": { name: "D♭m6", frets: [-1, 4, 2, 3, 2, 4] },
+    "Dm6": { name: "Dm6", frets: [-1, -1, 0, 2, 0, 1] },
+    "D#m6": { name: "D♯m6", frets: [-1, -1, 1, 3, 1, 2] },
+    "Ebm6": { name: "E♭m6", frets: [-1, -1, 1, 3, 1, 2] },
+    "Em6": { name: "Em6", frets: [0, 2, 2, 0, 2, 0] },
+    "Fm6": { name: "Fm6", frets: [1, -1, 0, 1, 1, 1] },
+    "F#m6": { name: "F♯m6", frets: [2, -1, 1, 2, 2, 2] },
+    "Gbm6": { name: "G♭m6", frets: [2, -1, 1, 2, 2, 2] },
+    "Gm6": { name: "Gm6", frets: [3, -1, 2, 3, 3, 3] },
+    "G#m6": { name: "G♯m6", frets: [4, -1, 3, 4, 4, 4] },
+    "Abm6": { name: "A♭m6", frets: [4, -1, 3, 4, 4, 4] },
+    "Am6": { name: "Am6", frets: [-1, 0, 2, 2, 1, 2] },
+    "A#m6": { name: "A♯m6", frets: [-1, 1, 3, 0, 2, 1] },
+    "Bbm6": { name: "B♭m6", frets: [-1, 1, 3, 0, 2, 1] },
+    "Bm6": { name: "Bm6", frets: [-1, 2, 0, 1, 0, 2] },
+
+    // 6
+    "C6": { name: "C6", frets: [-1, 3, 2, 2, 1, 0] },
+    "C#6": { name: "C♯6", frets: [-1, 4, 3, 3, 2, 4] },
+    "Db6": { name: "D♭6", frets: [-1, 4, 3, 3, 2, 4] },
+    "D6": { name: "D6", frets: [-1, -1, 0, 2, 0, 2] },
+    "D#6": { name: "D♯6", frets: [-1, -1, 1, 3, 1, 3] },
+    "Eb6": { name: "E♭6", frets: [-1, -1, 1, 3, 1, 3] },
+    "E6": { name: "E6", frets: [0, 2, 2, 1, 2, 0] },
+    "F6": { name: "F6", frets: [1, -1, 0, 2, 1, 1] },
+    "F#6": { name: "F♯6", frets: [2, -1, 1, 3, 2, 2] },
+    "Gb6": { name: "G♭6", frets: [2, -1, 1, 3, 2, 2] },
+    "G6": { name: "G6", frets: [3, 2, 0, 0, 0, 0] },
+    "G#6": { name: "G♯6", frets: [4, -1, 3, 5, 4, 4] },
+    "Ab6": { name: "A♭6", frets: [4, -1, 3, 5, 4, 4] },
+    "A6": { name: "A6", frets: [-1, 0, 2, 2, 2, 2] },
+    "A#6": { name: "A♯6", frets: [-1, 1, 3, 3, 3, 3] },
+    "Bb6": { name: "B♭6", frets: [-1, 1, 3, 3, 3, 3] },
+    "B6": { name: "B6", frets: [-1, 2, 4, 4, 4, 4] },
+
+    // m7b5
+    "Cm7b5": { name: "Cm7(♭5)", frets: [-1, 3, 4, 3, 4, -1] },
+    "C#m7b5": { name: "C♯m7(♭5)", frets: [-1, 4, 5, 4, 5, -1] },
+    "Dbm7b5": { name: "D♭m7(♭5)", frets: [-1, 4, 5, 4, 5, -1] },
+    "Dm7b5": { name: "Dm7(♭5)", frets: [-1, 5, 6, 5, 6, -1] },
+    "D#m7b5": { name: "D♯m7(♭5)", frets: [-1, 6, 7, 6, 7, -1] },
+    "Ebm7b5": { name: "E♭m7(♭5)", frets: [-1, 6, 7, 6, 7, -1] },
+    "Em7b5": { name: "Em7(♭5)", frets: [-1, 7, 8, 7, 8, -1] },
+    "Fm7b5": { name: "Fm7(♭5)", frets: [-1, 8, 9, 8, 9, -1] },
+    "F#m7b5": { name: "F♯m7(♭5)", frets: [2, -1, 2, 2, 1, -1] },
+    "Gbm7b5": { name: "G♭m7(♭5)", frets: [2, -1, 2, 2, 1, -1] },
+    "Gm7b5": { name: "Gm7(♭5)", frets: [3, -1, 3, 3, 2, -1] },
+    "G#m7b5": { name: "G♯m7(♭5)", frets: [4, -1, 4, 4, 3, -1] },
+    "Abm7b5": { name: "A♭m7(♭5)", frets: [4, -1, 4, 4, 3, -1] },
+    "Am7b5": { name: "Am7(♭5)", frets: [5, -1, 5, 5, 4, -1] },
+    "A#m7b5": { name: "A♯m7(♭5)", frets: [-1, 1, 2, 1, 2, -1] },
+    "Bbm7b5": { name: "B♭m7(♭5)", frets: [-1, 1, 2, 1, 2, -1] },
+    "Bm7b5": { name: "Bm7(♭5)", frets: [-1, 2, 3, 2, 3, -1] },
 };
 
 // ─── Custom Tuning Chord Databases ───
@@ -175,7 +283,10 @@ function findChordShape(chordName, tuning = "standard") {
 
     const normalizedName = chordName
         .replace(/(Maj7|M7|major7)/g, 'maj7')
-        .replace(/min7/g, 'm7');
+        .replace(/min7/g, 'm7')
+        .replace(/m7\(b5\)/g, 'm7b5')
+        .replace(/m7\(♭5\)/g, 'm7b5')
+        .replace(/m7♭5/g, 'm7b5');
 
     let shape = null;
     const tuningDb = tuning === "dadgad" ? DADGAD_CHORD_SHAPES : 
@@ -251,84 +362,203 @@ const CHORD_INTERVALS = {
     "m": [0, 3, 7],           // minor
     "7": [0, 4, 7, 10],       // dominant 7th
     "m7": [0, 3, 7, 10],      // minor 7th
+    "Maj7": [0, 4, 7, 11],    // major 7th
     "maj7": [0, 4, 7, 11],    // major 7th
     "dim": [0, 3, 6],         // diminished
     "dim7": [0, 3, 6, 9],     // diminished 7th
+    "m7(b5)": [0, 3, 6, 10],  // half-diminished 7th
+    "m7b5": [0, 3, 6, 10],    // half-diminished 7th
+    "mMaj7": [0, 3, 7, 11],   // minor-major 7th
+    "mM7": [0, 3, 7, 11],     // minor-major 7th
     "aug": [0, 4, 8],         // augmented
     "sus4": [0, 5, 7],        // suspended 4th
     "sus2": [0, 2, 7],        // suspended 2nd
-    "add9": [0, 4, 7, 14],    // add 9
     "6": [0, 4, 7, 9],        // major 6th
     "m6": [0, 3, 7, 9],       // minor 6th
+    "add9": [0, 4, 7, 14],    // add 9
     "9": [0, 4, 7, 10, 14],   // dominant 9th
     "m9": [0, 3, 7, 10, 14],  // minor 9th
 };
 
+function normalizeChordNameForDisplay(chordName) {
+    if (!chordName || chordName === "N.C.") return "N.C.";
+    
+    // If it contains a colon, it's a raw BTC label; standardize it
+    if (chordName.includes(":")) {
+        const parts = chordName.split(":");
+        const root = parts[0];
+        let quality = parts[1];
+        let slash = "";
+        if (quality.includes("/")) {
+            const qParts = quality.split("/");
+            quality = qParts[0];
+            slash = "/" + qParts[1];
+        }
+        
+        const qualityMap = {
+            "maj": "",
+            "min": "m",
+            "dim": "dim",
+            "aug": "aug",
+            "min6": "m6",
+            "maj6": "6",
+            "min7": "m7",
+            "minmaj7": "mMaj7",
+            "maj7": "Maj7",
+            "7": "7",
+            "dim7": "dim7",
+            "hdim7": "m7(b5)",
+            "sus2": "sus2",
+            "sus4": "sus4",
+        };
+        const suffix = qualityMap[quality] !== undefined ? qualityMap[quality] : quality;
+        return `${root}${suffix}${slash}`;
+    }
+    
+    return chordName;
+}
+
 function getPianoNotes(chordName) {
     if (!chordName || chordName === "N.C.") return [];
-    const match = chordName.match(/^([A-G][#b]?)(.*)$/);
+    
+    // Normalize raw chord names
+    const cleanName = normalizeChordNameForDisplay(chordName);
+    
+    const match = cleanName.match(/^([A-G][#b]?)(.*)$/);
     if (!match) return [];
     const [, root, quality] = match;
     const rootNote = NOTE_MAP[root];
     if (rootNote === undefined) return [];
 
     const intervals = CHORD_INTERVALS[quality] || CHORD_INTERVALS[""];
-    return intervals.map(i => (rootNote + i) % 12);
+    
+    // Base notes: root position starting at rootNote (0-11)
+    let notes = intervals.map(i => rootNote + i);
+    
+    // Shift the whole chord down by an octave if any note exceeds 2-octave range (23)
+    // and if doing so keeps all notes >= 0.
+    if (notes.some(n => n >= 24)) {
+        if (notes.every(n => n - 12 >= 0)) {
+            notes = notes.map(n => n - 12);
+        }
+    }
+    
+    // Wrap any remaining out-of-bounds notes individually (safeguard)
+    notes = notes.map(n => {
+        if (n >= 24) return n % 12 + 12; // keep in upper octave if possible
+        if (n < 0) return (n + 24) % 12;
+        return n;
+    });
+
+    // Sort notes for consistent display
+    notes = [...new Set(notes)].sort((a, b) => a - b);
+    return notes;
 }
 
 // ─── Piano Keyboard Component ───
 const PianoKeyboard = ({ activeNotes = [] }) => {
-    const whiteNotes = [0, 2, 4, 5, 7, 9, 11]; // C D E F G A B
-    const blackNotes = [1, 3, -1, 6, 8, 10];    // C# D# - F# G# A#
-    const keyW = 22;
-    const totalW = 7 * keyW;
-    const whiteH = 72;
-    const blackH = 44;
+    // 2 Octaves white keys: C4 to B5 (0 to 23 semitones)
+    const whiteKeys = [
+        { note: 0, label: "C" }, { note: 2, label: "D" }, { note: 4, label: "E" },
+        { note: 5, label: "F" }, { note: 7, label: "G" }, { note: 9, label: "A" }, { note: 11, label: "B" },
+        { note: 12, label: "C" }, { note: 14, label: "D" }, { note: 16, label: "E" },
+        { note: 17, label: "F" }, { note: 19, label: "G" }, { note: 21, label: "A" }, { note: 23, label: "B" }
+    ];
+
+    // Black keys with their note indices and precise w_idx boundaries
+    const blackKeys = [
+        { note: 1, boundary: 1, label: "C#" },
+        { note: 3, boundary: 2, label: "D#" },
+        { note: 6, boundary: 4, label: "F#" },
+        { note: 8, boundary: 5, label: "G#" },
+        { note: 10, boundary: 6, label: "A#" },
+        
+        { note: 13, boundary: 8, label: "C#" },
+        { note: 15, boundary: 9, label: "D#" },
+        { note: 18, boundary: 11, label: "F#" },
+        { note: 20, boundary: 12, label: "G#" },
+        { note: 22, boundary: 13, label: "A#" }
+    ];
+
+    const keyW = 20;
+    const totalW = whiteKeys.length * keyW;
+    const whiteH = 80;
+    const blackW = 12;
+    const blackH = 50;
 
     return (
-        <svg viewBox={`0 0 ${totalW} ${whiteH + 4}`} className="w-44 h-20 drop-shadow-md">
+        <svg viewBox={`0 0 ${totalW} ${whiteH + 15}`} className="w-full max-w-[320px] drop-shadow-lg" style={{ overflow: 'visible' }}>
+            <defs>
+                {/* Active gradients */}
+                <linearGradient id="whiteActiveGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#60A5FA" />
+                    <stop offset="100%" stopColor="#2563EB" />
+                </linearGradient>
+                <linearGradient id="blackActiveGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#34D399" />
+                    <stop offset="100%" stopColor="#059669" />
+                </linearGradient>
+                {/* Regular gradients for 3D feel */}
+                <linearGradient id="whiteKeyGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#F9FAFB" />
+                    <stop offset="85%" stopColor="#F3F4F6" />
+                    <stop offset="100%" stopColor="#E5E7EB" />
+                </linearGradient>
+                <linearGradient id="blackKeyGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#374151" />
+                    <stop offset="100%" stopColor="#111827" />
+                </linearGradient>
+            </defs>
+
             {/* White keys */}
-            {whiteNotes.map((note, i) => (
-                <rect
-                    key={`w-${note}`}
-                    x={i * keyW + 0.5}
-                    y={0}
-                    width={keyW - 1}
-                    height={whiteH}
-                    rx={3}
-                    fill={activeNotes.includes(note) ? "var(--nc-primary)" : "var(--nc-surface)"}
-                    stroke="var(--nc-border)"
-                    strokeWidth={0.8}
-                />
-            ))}
-            {/* Active note labels on white keys */}
-            {whiteNotes.map((note, i) => (
-                activeNotes.includes(note) ? (
-                    <circle key={`wd-${note}`} cx={i * keyW + keyW / 2} cy={whiteH - 10} r={4}
-                        fill="rgba(255,255,255,0.9)" />
-                ) : null
-            ))}
-            {/* Black keys */}
-            {blackNotes.map((note, i) => {
-                if (note < 0) return null;
-                const xPos = (i + (i >= 3 ? 1 : 0)) * keyW + keyW * 0.65;
+            {whiteKeys.map((keyObj, i) => {
+                const isActive = activeNotes.includes(keyObj.note);
                 return (
-                    <g key={`b-${note}`}>
+                    <g key={`w-${keyObj.note}`}>
                         <rect
-                            x={xPos}
+                            x={i * keyW}
                             y={0}
-                            width={keyW * 0.6}
-                            height={blackH}
+                            width={keyW - 0.5}
+                            height={whiteH}
                             rx={2}
-                            fill={activeNotes.includes(note) ? "var(--nc-secondary)" : "var(--nc-surface-3)"}
-                            stroke="var(--nc-border)"
+                            fill={isActive ? "url(#whiteActiveGrad)" : "url(#whiteKeyGrad)"}
+                            stroke="#D1D5DB"
                             strokeWidth={0.5}
+                            style={{ transition: 'fill 0.1s ease' }}
                         />
-                        {activeNotes.includes(note) && (
-                            <circle cx={xPos + keyW * 0.3} cy={blackH - 8} r={3}
-                                fill="rgba(255,255,255,0.9)" />
-                        )}
+                        {/* Note label at the bottom of white key */}
+                        <text
+                            x={i * keyW + keyW / 2}
+                            y={whiteH + 11}
+                            fontSize="8"
+                            fontWeight="bold"
+                            fill={isActive ? "#3B82F6" : "#9CA3AF"}
+                            textAnchor="middle"
+                            fontFamily="sans-serif"
+                        >
+                            {keyObj.label}
+                        </text>
                     </g>
+                );
+            })}
+
+            {/* Black keys */}
+            {blackKeys.map((keyObj) => {
+                const isActive = activeNotes.includes(keyObj.note);
+                const xPos = keyObj.boundary * keyW - blackW / 2;
+                return (
+                    <rect
+                        key={`b-${keyObj.note}`}
+                        x={xPos}
+                        y={0}
+                        width={blackW}
+                        height={blackH}
+                        rx={1.5}
+                        fill={isActive ? "url(#blackActiveGrad)" : "url(#blackKeyGrad)"}
+                        stroke="#111827"
+                        strokeWidth={0.5}
+                        style={{ transition: 'fill 0.1s ease', zIndex: 10 }}
+                    />
                 );
             })}
         </svg>
@@ -486,12 +716,7 @@ export const InstrumentPanel = ({ currentChord, transpose = 0, instrument = "gui
     const transposed = transposeChord(currentChord, transpose);
 
     // Normalize chord name for lookup
-    const cleanChord = (transposed || "").replace(/:maj7|:maj|:min7|:min|:m/g, (match) => {
-        if (match === ":min" || match === ":m") return "m";
-        if (match === ":min7") return "m7";
-        if (match === ":maj7") return "maj7";
-        return "";
-    }).trim();
+    const cleanChord = normalizeChordNameForDisplay(transposed);
 
     // ─── Piano View ───
     if (instrument === "piano") {

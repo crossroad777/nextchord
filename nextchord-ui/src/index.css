@@ -1289,6 +1289,9 @@ button:active:not(:disabled),
   font-weight: 700;
   cursor: pointer;
   transition: color var(--nc-transition-fast), text-shadow var(--nc-transition-fast);
+  display: inline-block;
+  min-height: 1.2em;
+  white-space: nowrap;
 }
 
 .cl-chord-text:hover {
@@ -1332,10 +1335,7 @@ button:active:not(:disabled),
 .cl-segment-row.cl-chord-row {
   padding-bottom: 0;
 }
-.cl-segment {
-  display: inline-block;
-  white-space: pre;
-}
+/* Removed duplicate cl-segment to let the inline-flex definition take effect */
 .cl-lyric-row {
   display: flex;
   flex-wrap: nowrap;
@@ -2222,7 +2222,7 @@ button:active:not(:disabled),
 /* ─── Measure (group of segments) ─── */
 .cp-measure {
   display: inline-grid;
-  grid-template-rows: auto auto;
+  grid-template-rows: 1fr auto;
   grid-auto-columns: max-content;
   grid-auto-flow: column;
   column-gap: 2px;
@@ -2232,8 +2232,8 @@ button:active:not(:disabled),
   padding-left: 0.6em;
   padding-right: 1.0em;
   margin-bottom: 0.5em;
-  vertical-align: bottom;
-  align-content: end;
+  vertical-align: top;
+  align-content: start;
 }
 
 .cp-chord-only .cp-measure {
@@ -2253,7 +2253,7 @@ button:active:not(:disabled),
 .cp-chord {
   grid-row: 1;
   justify-self: start;
-  align-self: end;
+  align-self: start;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2618,4 +2618,115 @@ button:active:not(:disabled),
   * {
     box-shadow: none !important;
   }
+}
+
+/* ============================================================
+   ChordWiki-Style Rhythm & Section Alignment
+   ============================================================ */
+
+/* Rhythm monospace alignment for sheet view */
+.cp-rhythm-line .cp-lyrics {
+  font-family: 'JetBrains Mono', 'Consolas', monospace !important;
+  white-space: pre !important;
+  letter-spacing: 0.05em !important;
+}
+
+.cp-rhythm-line .lyric-segment-edit-input {
+  font-family: 'JetBrains Mono', 'Consolas', monospace !important;
+}
+
+/* Rhythm monospace alignment for playback view */
+.cl-rhythm-line .cl-lyric-text-segment {
+  font-family: 'JetBrains Mono', 'Consolas', monospace !important;
+  white-space: pre !important;
+}
+
+.cl-rhythm-line .lyric-segment-edit-input {
+  font-family: 'JetBrains Mono', 'Consolas', monospace !important;
+}
+
+/* Section block containers (visual paragraphs) */
+.cp-section-block {
+  background: none;
+  border: none;
+  border-left: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 28px;
+  box-shadow: none;
+}
+
+[data-theme="light"] .cp-section-block {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.cp-section-block:hover {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+}
+
+[data-theme="light"] .cp-section-block:hover {
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+/* Section title badge */
+.cp-section-title-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 14px;
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.12), rgba(168, 85, 247, 0.12));
+  border: 1px solid rgba(99, 102, 241, 0.25);
+  border-radius: var(--nc-radius-md);
+  font-family: 'Outfit', 'Noto Sans JP', sans-serif;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--nc-primary, #6366f1);
+  letter-spacing: 0.05em;
+  margin-bottom: 14px;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.05);
+}
+
+[data-theme="light"] .cp-section-title-badge {
+  background: linear-gradient(135deg, rgba(99, 102, 241, 0.06), rgba(168, 85, 247, 0.06));
+  color: #4f46e5;
+  border-color: rgba(99, 102, 241, 0.2);
+}
+
+
+/* Metadata Banner */
+.cp-meta-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 18px;
+  background: rgba(16, 185, 129, 0.04);
+  border: 1px solid rgba(16, 185, 129, 0.15);
+  border-radius: var(--nc-radius-md);
+  margin-bottom: 24px;
+  color: var(--nc-success);
+  font-size: 0.82rem;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+[data-theme="light"] .cp-meta-banner {
+  background: rgba(16, 185, 129, 0.03);
+  border-color: rgba(16, 185, 129, 0.2);
+}
+
+/* Interactive chord underlines (hover-only for flat Wiki style) */
+.cp-chord-interactive,
+.cl-chord-interactive {
+  border-bottom: 1px dotted transparent !important;
+  transition: border-color 0.2s var(--nc-ease-smooth);
+}
+
+.cp-chord-interactive:hover,
+.cl-chord-interactive:hover {
+  border-bottom-color: var(--gf-text-dim) !important;
 }

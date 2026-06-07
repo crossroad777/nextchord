@@ -8,6 +8,7 @@ MP3ファイルをアップロードし、コード抽出パイプラインを�
 - GET /status/{session_id} : 解析状況を取得
 - GET /result/{session_id} : 解析結果を取得
 """
+# Section label fix: Chorus -> Verse A (analyze_sections update)
 
 # cuDNN無効化: CTranslate2(faster-whisper)とPyTorch cuDNN 9の
 # DLLシンボル競合 (cudnnGetLibConfig) によるクラッシュを回避
@@ -502,8 +503,6 @@ from chord_processing import (
     estimate_key_from_audio,
     detect_song_type,
     key_consensus,
-    _ENHARMONIC_MAP,
-    _ENHARMONIC_FLAT_MAP,
     _FLAT_KEYS,
 )
 
