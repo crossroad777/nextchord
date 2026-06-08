@@ -70,7 +70,7 @@ ENV HOME=/home/user \
 
 # HF Spaces uses port 7860
 ENV PORT=7860 \
-    WHISPER_MODEL_SIZE=medium
+    WHISPER_MODEL_SIZE=small
 EXPOSE 7860
 
 WORKDIR /app/fastapi-backend
