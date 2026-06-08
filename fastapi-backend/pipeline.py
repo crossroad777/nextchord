@@ -1151,6 +1151,8 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             future_to_step = {}
             if futures.get('act'):
                 future_to_step[futures['act']] = 'act'
+            if futures.get('key_audio'):
+                future_to_step[futures['key_audio']] = 'key_audio'
             if futures.get('key_vec'):
                 future_to_step[futures['key_vec']] = 'key_vec'
             if futures.get('whisper_res'):
@@ -1336,6 +1338,17 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         import traceback
                         traceback.print_exc()
                 
+                elif step_name == 'key_audio':
+                    try:
+                        _key_audio_result = completed_future.result()
+                        t_key_audio = time.time() - start_total
+                        perf_log.append(f"[OK] Key (chroma): {t_key_audio:.1f}s -> {_key_audio_result}")
+                        print(f"[{session_id}] [PERF] Key (chroma) done: {t_key_audio:.1f}s -> {_key_audio_result}")
+                        _update_step(session_data, "key", f"[OK] キー検出 ({t_key_audio:.0f}s)")
+                    except Exception as e:
+                        perf_log.append(f"[FAIL] Key (chroma): {type(e).__name__}: {e}")
+                        print(f"[{session_id}] [ERROR] Key (chroma) failed: {e}")
+
                 elif step_name == 'chroma_chords':
                     try:
                         hps_result = completed_future.result()
