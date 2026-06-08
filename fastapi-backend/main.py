@@ -2057,7 +2057,15 @@ async def health_check():
     """
     ヘルスチェック
     """
-    return {"status": "healthy", "version": "0.4.0", "demucs": "enabled", "whisper": type(whisper_model).__name__ if whisper_model else "None"}
+    import os as _os_health
+    return {
+        "status": "healthy", 
+        "version": "0.4.1", 
+        "demucs": "enabled", 
+        "whisper": type(whisper_model).__name__ if whisper_model else "None",
+        "whisper_size": _os_health.environ.get("WHISPER_MODEL_SIZE", "medium"),
+        "groq": "enabled" if _os_health.environ.get("GROQ_API_KEY", "").strip() else "disabled",
+    }
 
 
 
