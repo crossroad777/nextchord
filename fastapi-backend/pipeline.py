@@ -738,6 +738,41 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 groq_key = _os_groq.environ.get("GROQ_API_KEY", "").strip()
                 use_groq = bool(groq_key)
                 
+                # --- Groq API 実行 ---
+                if use_groq:
+                    try:
+                        _dbg(f"Using Groq API (whisper-large-v3)...")
+                        groq_segments, groq_info = _transcribe_via_groq(str(wav), groq_key, sid)
+                        # _transcribe_via_groq returns (list[PseudoSegment], PseudoInfo)
+                        # Convert to the dict format expected by the rest of the pipeline
+                        segments = []
+                        for gs in groq_segments:
+                            seg_words = None
+                            if hasattr(gs, 'words') and gs.words:
+                                seg_words = [{'start': w.start, 'end': w.end, 'word': w.word} for w in gs.words]
+                            elif isinstance(gs, dict) and gs.get('words'):
+                                seg_words = gs['words']
+                            
+                            if isinstance(gs, dict):
+                                seg_dict = gs
+                            else:
+                                seg_dict = {
+                                    'id': getattr(gs, 'id', -1),
+                                    'start': gs.start,
+                                    'end': gs.end,
+                                    'text': gs.text.strip() if hasattr(gs, 'text') else '',
+                                    'words': seg_words,
+                                }
+                            segments.append(seg_dict)
+                        
+                        text = ''.join(s.get('text', '') if isinstance(s, dict) else s.text for s in groq_segments)
+                        _dbg(f"Groq API done: {len(segments)} segments, {len(text)} chars")
+                        return {'segments': segments, 'text': text}
+                    except Exception as groq_err:
+                        _dbg(f"Groq API failed: {groq_err}, falling back to local whisper...")
+                        import traceback; traceback.print_exc()
+                        use_groq = False  # Fall through to local
+                
                 # --- ローカルフォールバック ---
                 if not use_groq:
                     _dbg(f"Waiting for GPU lock...")

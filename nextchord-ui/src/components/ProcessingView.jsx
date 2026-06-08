@@ -10,9 +10,17 @@ export function ProcessingView({ session, stepsDone, completedSteps = [] }) {
   ];
   const totalAvgSec = steps.reduce((a, s) => a + s.avgSec, 0);
   
-  // Count how many steps are actually completed based on their keys
-  const completedCount = steps.filter(s => completedSteps.includes(s.key)).length;
+  // Build sequential completion: a step is visually "done" only if all previous steps are also done
+  const visuallyDone = steps.map((step, i) => {
+    const allPriorDone = steps.slice(0, i).every(s => completedSteps.includes(s.key));
+    return allPriorDone && completedSteps.includes(step.key);
+  });
 
+  // Count how many steps are sequentially completed
+  const completedCount = visuallyDone.filter(Boolean).length;
+
+  // First uncompleted (sequential) index
+  const firstUncompletedIndex = visuallyDone.indexOf(false);
   // Track elapsed since analysis started
   const startTimeRef = useRef(Date.now());
   const [elapsedSec, setElapsedSec] = useState(0);
@@ -58,7 +66,7 @@ export function ProcessingView({ session, stepsDone, completedSteps = [] }) {
     return `残り約${min}分${sec}秒`;
   };
 
-  const firstUncompletedIndex = steps.findIndex(s => !completedSteps.includes(s.key));
+
 
   return (
     <div
@@ -108,7 +116,7 @@ export function ProcessingView({ session, stepsDone, completedSteps = [] }) {
       {/* Step checklist */}
       <div className="w-full max-w-xs space-y-2 mb-6" role="list" aria-label="解析ステップ">
         {steps.map((step, i) => {
-          const isDone = completedSteps.includes(step.key);
+          const isDone = visuallyDone[i];
           const isCurrent = i === firstUncompletedIndex;
           return (
             <div key={step.key}
