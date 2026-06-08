@@ -3,9 +3,9 @@ import React, { useState, useEffect, useRef } from "react";
 export function ProcessingView({ session, stepsDone, completedSteps = [] }) {
   const steps = [
     { key: 'chords', label: 'コード解析', icon: '🎸', avgSec: 3 },
-    { key: 'whisper', label: '歌詞検出', icon: '🎤', avgSec: 8 },
-    { key: 'key', label: 'キー検出', icon: '🎵', avgSec: 10 },
-    { key: 'beats', label: 'ビート検出', icon: '🥁', avgSec: 15 },
+    { key: 'beats', label: 'ビート検出', icon: '🥁', avgSec: 5 },
+    { key: 'key', label: 'キー検出', icon: '🎵', avgSec: 8 },
+    { key: 'whisper', label: '歌詞検出', icon: '🎤', avgSec: 15 },
     { key: 'postprocess', label: 'スコア生成', icon: '📄', avgSec: 5 },
   ];
   const totalAvgSec = steps.reduce((a, s) => a + s.avgSec, 0);
