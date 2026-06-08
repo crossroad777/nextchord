@@ -69,9 +69,8 @@ ENV HOME=/home/user \
     PATH=/home/user/.local/bin:$PATH
 
 # HF Spaces uses port 7860
-# Groq API (large-v3) is primary; local whisper is fallback only → tiny for fast startup
 ENV PORT=7860 \
-    WHISPER_MODEL_SIZE=tiny
+    WHISPER_MODEL_SIZE=medium
 EXPOSE 7860
 
 WORKDIR /app/fastapi-backend
