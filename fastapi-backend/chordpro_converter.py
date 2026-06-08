@@ -596,9 +596,6 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
 
     for item in windows:
         if item[0] == "SECTION":
-            _, s_name, _ = item
-            lines.append("")
-            lines.append(f"{{c:{_section_to_japanese(s_name)}}}")
             continue
 
         if item[0] == "VOCAL":
