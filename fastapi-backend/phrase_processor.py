@@ -100,13 +100,20 @@ def _find_best_split(text: str, ideal_pos: int, boundaries: list[tuple[int, str,
 
         next_b, next_surface, next_pos_tag, next_detail = next_info[i]
 
+        # 助詞の直前で切らない（「は」「が」「を」「に」「の」などのすべての助詞）
+        if next_pos_tag == '助詞':
+            score += 15
         # 終助詞の直前で切らない
-        if next_pos_tag == '助詞' and next_detail == '終助詞':
-            score += 10
+        elif next_pos_tag == '助詞' and next_detail == '終助詞':
+            score += 15
 
         # 助動詞の直前で切らない（「ない」「です」「ます」等）
         if next_pos_tag == '助動詞':
-            score += 6
+            score += 15
+
+        # 接尾辞の直前で切らない（「たち」「ら」等）
+        if next_pos_tag == '接尾辞' or next_detail == '接尾':
+            score += 15
 
         # 連体詞（この、その、あの）の後：次の名詞と分離しない
         if pos_tag == '連体詞':
@@ -114,11 +121,11 @@ def _find_best_split(text: str, ideal_pos: int, boundaries: list[tuple[int, str,
 
         # 非自立名詞の直前で切らない（「のこと」「のもの」等）
         if next_pos_tag == '名詞' and next_detail == '非自立':
-            score += 4
+            score += 12
 
         # 接続助詞（から、けど等）の直前で切らない（「君だ / から」防止）
         if next_pos_tag == '助詞' and next_detail == '接続助詞':
-            score += 8
+            score += 15
 
         # 非自立の形容詞・動詞の直前で切らない（「許して / よ」防止）
         if next_detail == '非自立' and next_pos_tag in ('形容詞', '動詞'):
@@ -180,7 +187,7 @@ def process_phrases_for_display(phrases: list[dict], target_chars: int = 30,
         avg_bar_dur = (bar_positions[-1] - bar_positions[0]) / (len(bar_positions) - 1)
     else:
         avg_bar_dur = 2.5  # fallback: 120BPM 4/4
-    four_bar_dur = avg_bar_dur * bars_per_line  # 4小節の秒数
+    four_bar_dur = avg_bar_dur * 4  # 常に4小節分の秒数を上限にする (bars_per_line=8時の過剰結合防止)
 
     # 短いフレーズを結合して4小節ブロックにまとめる
     # ルール: 現在のブロックが4小節未満なら次のフレーズを結合

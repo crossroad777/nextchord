@@ -44,6 +44,12 @@ except ImportError:
 # GPU排他ロック: Whisper/Demucs等のGPUモデルを同時実行しないための排他制御
 _gpu_lock = threading.Lock()
 
+# Whisperのイニシャルプロンプト
+# 注意: 歌詞のような文章をプロンプトにすると、Whisperが聞き取れない区間で
+# プロンプトをそのままオウム返しするバグがある。
+# 安全なプロンプト = 言語ヒントのみ、歌詞的な内容を含めない。
+WHISPER_INITIAL_PROMPT = "日本語の歌詞。"
+
 
 import re as _re
 
@@ -65,7 +71,10 @@ _KNOWN_HALLUCINATIONS = [
     'music by', 'subtitles by',
     '視聴してくださって', '視聴ありがとう', 'ご視聴ありがとう',
     'チャンネル登録', 'グッドボタン', '高評価',
-    '歌唱', '作詞', '作曲', '編曲', '何', '歌・',
+    '歌唱', '作詞', '作曲', '編曲', '歌・',
+    # 旧イニシャルプロンプトのオウム返し防止
+    '花びらが舞い散る', '歩き出す未来へ', '巡り会えるその日まで',
+    '日本語の歌詞',
 ]
 
 def _is_hallucination(text: str) -> bool:
@@ -103,6 +112,26 @@ def _is_hallucination(text: str) -> bool:
         most_common_count = word_counts.most_common(1)[0][1]
         if most_common_count >= 3 and most_common_count / len(words) > 0.5:
             return True
+    
+    # ── 日本語ハルシネーション追加検出 ──
+    import re as _re_h
+    
+    # ひらがなのみで構成＆短い＆辞書にない不自然な組み合わせ
+    hiragana_only = _re_h.sub(r'[^\u3040-\u309F]', '', stripped)
+    if len(stripped) > 0 and len(hiragana_only) == len(stripped) and len(stripped) <= 8:
+        # 短いひらがなのみテキスト → 不自然なパターンを検出
+        # 「ん」の後に母音が来る不自然なパターン（例: "あんあお"）
+        if _re_h.search(r'ん[あいうえお]', stripped):
+            return True
+    
+    # 意味のない短いフレーズ（3文字以下でひらがなのみ、助詞や感嘆詞でない）
+    _valid_short = {'あー', 'おー', 'うー', 'えー', 'ねえ', 'なあ', 'ああ', 'おお',
+                    'さあ', 'まあ', 'はい', 'いや', 'うん', 'ええ', 'そう', 'もう',
+                    'ラン', 'ラー', 'ラ', 'ル', 'パン', 'ほら', 'ねえ', 'よう', 'だよ',
+                    'なの', 'かな', 'かも', 'だな', 'よね', 'ない', 'いい', 'おい'}
+    if len(stripped) <= 3 and len(hiragana_only) == len(stripped) and stripped not in _valid_short:
+        # 非常に短く意味不明→ハルシネーション候補（ただし確実に消すにはリスクがあるのでスコア制にはしない）
+        pass
     
     return False
 
@@ -641,7 +670,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             "language": "ja",
                             "response_format": "verbose_json",
                             "temperature": "0.0",
-                            "prompt": "歌",
+                            "prompt": WHISPER_INITIAL_PROMPT,
                             "timestamp_granularities[]": ["word", "segment"]
                         }
 
@@ -767,7 +796,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                         
                         text = ''.join(s.get('text', '') if isinstance(s, dict) else s.text for s in groq_segments)
                         _dbg(f"Groq API done: {len(segments)} segments, {len(text)} chars")
-                        return {'segments': segments, 'text': text}
+                        # Don't return here — fall through to gap recovery
                     except Exception as groq_err:
                         _dbg(f"Groq API failed: {groq_err}, falling back to local whisper...")
                         import traceback; traceback.print_exc()
@@ -795,6 +824,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                 vad_filter=False, # 音楽のボーカル検出漏れを防ぐためVADは無効化
                                 beam_size=5 if _has_cuda else 1,  # GPU=5(精度優先), CPU=1(速度優先, ~3-5x高速)
                                 temperature=0.0,
+                                initial_prompt=WHISPER_INITIAL_PROMPT,
                             )
                         else:
                             # openai-whisper API
@@ -802,7 +832,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                             opts = dict(
                                 language="ja",
                                 word_timestamps=True,
-                                initial_prompt="歌",
+                                initial_prompt=WHISPER_INITIAL_PROMPT,
                                 condition_on_previous_text=False,
                                 no_speech_threshold=0.4,
                                 fp16=_torch.cuda.is_available(),
@@ -823,10 +853,97 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                 
                 # --- Groq または faster-whisper の場合の共通処理 ---
                 try:
-                    print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
-                    perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
+                    # Groqパスの場合: segmentsは既に構築済み。gap recoveryに進む。
+                    if use_groq and segments:
+                        # Groq path: segments already built, run gap recovery directly
+                        print(f"[{sid}] [WHISPER] Groq path: {len(segments)} segments, running gap recovery...")
+                        try:
+                            import librosa
+                            import soundfile as sf
+                            import tempfile
+                            
+                            first_seg_start = segments[0]['start'] if segments else 0
+                            if first_seg_start > 15.0 and segments:
+                                gap_start = max(0, first_seg_start - 10)
+                                gap_end = first_seg_start + 1
+                                print(f"[{sid}] [WHISPER] Groq gap detected: {gap_start:.1f}s - {gap_end:.1f}s, re-transcribing...")
+                                
+                                from waveform_utils import load_audio_cached
+                                y_full, sr_full = load_audio_cached(str(wav), sr=16000, mono=True)
+                                start_sample = int(gap_start * sr_full)
+                                end_sample = min(int(gap_end * sr_full), len(y_full))
+                                y_gap = y_full[start_sample:end_sample]
+                                
+                                gap_wav = tempfile.NamedTemporaryFile(suffix='.wav', delete=False)
+                                sf.write(gap_wav.name, y_gap, sr_full)
+                                gap_wav.close()
+                                
+                                try:
+                                    import os as _os_groq_gap
+                                    groq_key_gap = _os_groq_gap.environ.get("GROQ_API_KEY", "").strip()
+                                    print(f"[{sid}] [WHISPER] Gap re-transcription using Groq API...", flush=True)
+                                    gap_segs, _ = _transcribe_via_groq(gap_wav.name, groq_key_gap, sid)
+                                    
+                                    gap_results = []
+                                    for gs in gap_segs:
+                                        gt = gs.text.strip() if hasattr(gs, 'text') else (gs.get('text', '') if isinstance(gs, dict) else '')
+                                        gt = gt.strip()
+                                        if not gt or _is_hallucination(gt):
+                                            print(f"[{sid}] [WHISPER] Gap halluc/empty: '{gt[:30]}'")
+                                            continue
+                                        gap_start_time = gs.start if hasattr(gs, 'start') else gs.get('start', 0)
+                                        gap_end_time = gs.end if hasattr(gs, 'end') else gs.get('end', 0)
+                                        gap_words = []
+                                        raw_words = gs.words if hasattr(gs, 'words') else (gs.get('words') if isinstance(gs, dict) else None)
+                                        if raw_words:
+                                            for gw in raw_words:
+                                                w_start = gw.start if hasattr(gw, 'start') else gw.get('start', 0)
+                                                w_end = gw.end if hasattr(gw, 'end') else gw.get('end', 0)
+                                                w_word = gw.word if hasattr(gw, 'word') else gw.get('word', '')
+                                                gap_words.append({
+                                                    'start': w_start + gap_start,
+                                                    'end': w_end + gap_start,
+                                                    'word': w_word,
+                                                })
+                                        gap_results.append({
+                                            'id': -1,
+                                            'start': gap_start_time + gap_start,
+                                            'end': gap_end_time + gap_start,
+                                            'text': gt,
+                                            'words': gap_words if gap_words else None,
+                                        })
+                                    
+                                    if gap_results:
+                                        gap_results = [
+                                            gr for gr in gap_results
+                                            if len(gr['text']) >= 2 and gr['start'] < first_seg_start - 0.5
+                                        ]
+                                    if gap_results:
+                                        for gr in gap_results:
+                                            print(f"[{sid}] [WHISPER] Groq gap recovery: '{gr['text'][:50]}' at {gr['start']:.1f}s")
+                                        segments = gap_results + segments
+                                        print(f"[{sid}] [WHISPER] Recovered {len(gap_results)} segments from gap (Groq)")
+                                    else:
+                                        print(f"[{sid}] [WHISPER] Groq gap recovery: no valid segments found")
+                                finally:
+                                    import os
+                                    if os.path.exists(gap_wav.name):
+                                        os.unlink(gap_wav.name)
+                            else:
+                                print(f"[{sid}] [WHISPER] No gap detected (first_seg_start={first_seg_start:.1f}s)")
+                        except Exception as gap_err:
+                            print(f"[{sid}] [WHISPER] Groq gap recovery failed (non-fatal): {gap_err}")
+                        
+                        text = ''.join(s.get('text', '') for s in segments)
+                        return {'segments': segments, 'text': text}
+                    else:
+                        try:
+                            print(f"[{sid}] [WHISPER] transcribe() returned, lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s", flush=True)
+                            perf_log.append(f"[DEBUG] Whisper info: lang={info.language}, prob={info.language_probability:.2f}, dur={info.duration:.1f}s")
+                        except Exception:
+                            pass
                     
-                    # openai-whisper互換形式に変換
+                        # openai-whisper互換形式に変換
                     segments = []
                     all_text = []
                     import re
@@ -836,7 +953,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                     _punct_re = re.compile(r'^[\s\u3000・、。\-―─…♪♫\u200b]+$')
                     _hangul_re_local = re.compile(r'[\uAC00-\uD7AF\u1100-\u11FF]')
                     # 音楽クレジット系ハルシネーションキーワード
-                    _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏', '何',
+                    _halluc_kw = {'作詞', '作曲', '編曲', '歌詞', '提供', '制作', '収録', '発売', '演奏',
                                   'Movie', 'movie', 'Music', 'music', 'Video', 'video',
                                   'Subscribe', 'subscribe', 'Sound', 'sound'}
                     for seg in segments_iter:
@@ -956,10 +1073,11 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                         language="ja",
                                         word_timestamps=True,
                                         condition_on_previous_text=False,
-                                        no_speech_threshold=0.1,
-                                        vad_filter=False,
+                                        no_speech_threshold=0.35,
+                                        vad_filter=False, # ギャップではVAD無効化 — ボーカル+伴奏でVADが誤判定するため
                                         beam_size=5,
                                         temperature=[0.0, 0.2, 0.4],
+                                        initial_prompt=WHISPER_INITIAL_PROMPT,
                                     )
 
                                 
@@ -1005,7 +1123,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     # first_seg_start以降のセグメントも重複なので除去
                                     gap_results = [
                                         gr for gr in gap_results
-                                        if len(gr['text']) >= 3 and gr['start'] < first_seg_start - 0.5
+                                        if len(gr['text']) >= 2 and gr['start'] < first_seg_start - 0.5
                                     ]
                                 if gap_results:
                                     for gr in gap_results:
@@ -1076,14 +1194,25 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
                                     try:
                                         print(f"[{sid}] [WHISPER] Re-transcribing gap {cut_start:.0f}s-{cut_end:.0f}s...")
                                         cut_segs, _ = model.transcribe(
+
                                             cut_wav.name,
+
                                             language="ja",
+
                                             word_timestamps=True,
+
                                             condition_on_previous_text=False,
-                                            no_speech_threshold=0.3,
-                                            vad_filter=False,
+
+                                            no_speech_threshold=0.35,
+
+                                            vad_filter=True, # 中間のギャップもVADを有効化してハルシネーションを防ぐ
+
                                             beam_size=5,
+
                                             temperature=0.0,
+
+                                            initial_prompt=WHISPER_INITIAL_PROMPT,
+
                                         )
                                         
                                         for cs in cut_segs:
@@ -1842,6 +1971,7 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
             from lyrics_postprocess import clean_hallucinated_endings
             # ハルシネーション除去 -> フレーズ分割
             cleaned_phrases = clean_hallucinated_endings(lyrics_phrases)
+            lyrics_phrases = cleaned_phrases  # クリーンアップされたフレーズを元のリストにも適用して、スナッピングや保存に反映する
             display_phrases = process_phrases_for_display(
                 cleaned_phrases, target_chars=30,
                 bar_positions=bar_positions
@@ -2114,3 +2244,162 @@ def run_pipeline(session_id: str, session_dir: Path, wav_path: Path, ctx: dict):
         sessions[session_id]["error"] = str(e)
         save_session(session_id)
         print(f"[{session_id}] Pipeline failed. Kept for user review.")
+
+
+
+def reanalyze_chords_with_stems(session_id: str, session_dir: Path, ctx: dict):
+    """
+    音源分離完了後に、ボーカル・ドラムを除去した clean_harmony.wav を使用して
+    コード認識を再実行し、セッション情報を更新する。
+    """
+    import time
+    import json
+    import gc
+    from collections import Counter
+    import numpy as np
+    from pathlib import Path
+    from chord_processing import (
+        _smooth_chord_segments,
+        _beat_majority_chords,
+        _normalize_chords_to_key,
+    )
+    from chord_verifier import verify_and_correct_chords
+    from chordpro_converter import structured_to_chordpro
+    from btc_engine import get_btc_engine
+    
+    global _HAS_CHORDMINI
+    try:
+        from chordmini_engine import get_chordmini_engine
+        _HAS_CHORDMINI = True
+    except ImportError:
+        _HAS_CHORDMINI = False
+
+    sessions = ctx["sessions"]
+    save_session = ctx["save_session"]
+    
+    if session_id not in sessions:
+        print(f"[{session_id}] [RE-ANALYSIS] Error: Session not found in memory.")
+        return
+        
+    session_data = sessions[session_id]
+    result = session_data.get("result")
+    if not result:
+        print(f"[{session_id}] [RE-ANALYSIS] Error: result dict not found in session.")
+        return
+        
+    structured = result.get("structured_data")
+    beat_times_list = result.get("beat_times")
+    if not structured or not beat_times_list:
+        print(f"[{session_id}] [RE-ANALYSIS] Error: structured_data or beat_times missing.")
+        return
+
+    clean_harmony_wav = Path(session_dir) / "clean_harmony.wav"
+    if not clean_harmony_wav.exists():
+        print(f"[{session_id}] [RE-ANALYSIS] [WARN] clean_harmony.wav not found. Fallback to clean.wav")
+        clean_harmony_wav = Path(session_dir) / "clean.wav"
+        if not clean_harmony_wav.exists():
+            print(f"[{session_id}] [RE-ANALYSIS] [ERR] No stem mix wav found. Aborting.")
+            return
+
+    print(f"[{session_id}] [RE-ANALYSIS] Loading audio from {clean_harmony_wav.name}...")
+    t_start = time.time()
+    
+    # 1. コード検出エンジンの実行 (ChordMini優先、BTCフォールバック)
+    seg_s, seg_l = None, None
+    
+    if _HAS_CHORDMINI:
+        try:
+            cm = get_chordmini_engine()
+            with _gpu_lock:
+                cm.load()
+                seg_s, seg_l = cm.detect_chords(clean_harmony_wav)
+            print(f"[{session_id}] [RE-ANALYSIS] [ChordMini] Detected {len(seg_l)} raw segments.")
+        except Exception as e:
+            print(f"[{session_id}] [RE-ANALYSIS] [ChordMini] Failed: {e}, falling back to BTC")
+            
+    if seg_s is None:
+        try:
+            btc = get_btc_engine()
+            with _gpu_lock:
+                btc.load()
+                seg_s, seg_l = btc.detect_chords(clean_harmony_wav)
+                try:
+                    btc.model.cpu()
+                except Exception:
+                    pass
+                gc.collect()
+                import torch as _t; _t.cuda.empty_cache() if _t.cuda.is_available() else None
+            print(f"[{session_id}] [RE-ANALYSIS] [BTC] Detected {len(seg_l)} raw segments.")
+        except Exception as e:
+            print(f"[{session_id}] [RE-ANALYSIS] [BTC] Failed: {e}")
+            
+    if seg_s is None or seg_l is None or len(seg_s) == 0:
+        print(f"[{session_id}] [RE-ANALYSIS] [ERR] Chord detection returned empty. Aborting re-analysis.")
+        return
+
+    # 2. ビート同期多数決マッピング
+    v_time = np.array(beat_times_list, dtype=float)
+    seg_starts, seg_labels = _smooth_chord_segments(seg_s, seg_l, min_duration=0.4)
+    beat_chords = _beat_majority_chords(v_time, seg_starts, seg_labels)
+    
+    # 3. キー正規化
+    final_key = session_data.get("key", result.get("key", "C major"))
+    normalized_chords = _normalize_chords_to_key(beat_chords, final_key)
+    
+    # 4. クロマベースのコード検証
+    pre_verify_chords = list(normalized_chords)
+    try:
+        verified_chords, verify_stats = verify_and_correct_chords(
+            pre_verify_chords,
+            v_time,
+            str(clean_harmony_wav),
+            final_key,
+            correction_threshold=0.15,
+            min_improvement=0.30,
+        )
+        print(f"[{session_id}] [RE-ANALYSIS] Chroma verify: {verify_stats['corrections']} corrections.")
+    except Exception as e:
+        print(f"[{session_id}] [RE-ANALYSIS] [WARN] Chroma verify failed: {e}")
+        verified_chords = pre_verify_chords
+
+    # 5. structured_data の "chord" フィールドを更新
+    for i, entry in enumerate(structured):
+        if i < len(verified_chords):
+            entry["chord"] = verified_chords[i]
+            
+    # 6. ChordProテキストとタイミングの再生成
+    chordpro_text = ""
+    chordpro_line_timings = []
+    try:
+        beats_per_bar = result.get("beats_per_bar", 4)
+        bar_positions = result.get("bar_positions", [])
+        chordpro_text, chordpro_line_timings = structured_to_chordpro(
+            structured,
+            lyrics_phrases=result.get("lyrics_phrases"),
+            display_phrases=result.get("display_phrases"),
+            title=session_data.get("title", ""),
+            artist=session_data.get("artist", ""),
+            key=final_key,
+            beats_per_bar=beats_per_bar,
+            bar_positions=bar_positions
+        )
+    except Exception as e:
+        print(f"[{session_id}] [RE-ANALYSIS] [ERR] ChordPro regeneration failed: {e}")
+        chordpro_text = result.get("chordpro_text", "")
+        chordpro_line_timings = result.get("chordpro_line_timings", [])
+
+    # 7. result ディクショナリを更新して保存
+    result["structured_data"] = structured
+    result["chordpro_text"] = chordpro_text
+    result["chordpro_line_timings"] = chordpro_line_timings
+    
+    # perf.log に再解析ログを追記
+    try:
+        perf_path = Path(session_dir) / "perf.log"
+        with open(perf_path, "a", encoding="utf-8") as pf:
+            pf.write(f"\n[RE-ANALYSIS] Completed chord re-analysis using {clean_harmony_wav.name} in {time.time() - t_start:.1f}s\n")
+    except Exception:
+        pass
+        
+    save_session(session_id)
+    print(f"[{session_id}] ★ [RE-ANALYSIS] Chord re-analysis completed successfully in {time.time() - t_start:.1f}s")

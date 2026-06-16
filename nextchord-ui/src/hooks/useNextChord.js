@@ -2,14 +2,45 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { transposeChord, calculateBestCapo } from "../utils/musicUtils";
 
 export const getApiBase = () => {
-  return localStorage.getItem('nextchord-api-base') || (import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000");
+  const saved = localStorage.getItem('nextchord-api-base');
+  if (saved && (saved.includes('trycloudflare.com') || saved.includes('localhost:8000'))) {
+    localStorage.removeItem('nextchord-api-base');
+    return import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000";
+  }
+  return saved || (import.meta.env.VITE_API_URL !== undefined ? import.meta.env.VITE_API_URL : "http://localhost:8000");
 };
 
 export const STATUS = { IDLE: "idle", UPLOADING: "uploading", PROCESSING: "processing", COMPLETED: "completed", FAILED: "failed" };
 
+/** Raw API error → user-friendly short message + raw detail */
+function cleanErrorMessage(raw) {
+  if (!raw || typeof raw !== 'string') return { message: '不明なエラーが発生しました', detail: '' };
+  const detail = raw;
+  // YouTube cookie expiry
+  if (raw.includes('cookies are no longer valid') || raw.includes('Sign in to confirm') || raw.includes('LOGIN_REQUIRED')) {
+    return { message: 'YouTubeの認証Cookieが期限切れです。管理者にCookieの更新を依頼してください。', detail };
+  }
+  // YouTube download general failure
+  if (raw.includes('YouTube download failed')) {
+    return { message: 'YouTube動画のダウンロードに失敗しました。URLが正しいか確認してください。', detail };
+  }
+  // Network / timeout
+  if (raw.includes('timeout') || raw.includes('Timeout') || raw.includes('ETIMEDOUT')) {
+    return { message: 'サーバーとの通信がタイムアウトしました。しばらく経ってから再試行してください。', detail };
+  }
+  // File format
+  if (raw.includes('Unsupported') || raw.includes('Invalid audio') || raw.includes('codec')) {
+    return { message: '対応していないファイル形式です。MP3, WAV, M4Aをお試しください。', detail };
+  }
+  // Generic: truncate to first meaningful line
+  const firstLine = raw.split('\n').find(l => l.trim() && !l.startsWith('[debug]') && !l.startsWith('Download ')) || raw.substring(0, 100);
+  return { message: firstLine.length > 120 ? firstLine.substring(0, 120) + '…' : firstLine, detail: detail.length > 200 ? detail : '' };
+}
+
 export function useNextChord() {
   const [status, setStatus] = useState(STATUS.IDLE);
   const [progressMsg, setProgressMsg] = useState("Preparing...");
+  const [errorDetail, setErrorDetail] = useState("");
   const [stepsDone, setStepsDone] = useState(0);
   const [completedSteps, setCompletedSteps] = useState([]);
   const [session, setSession] = useState(null);
@@ -200,12 +231,10 @@ export function useNextChord() {
     } catch (e) { console.error("History fetch error:", e); }
   };
 
-  // アプリ起動時: 前回のセッションを自動復元
+  // アプリ起動時: 常にIDLE状態で開始し、履歴を取得
+  // ※ ポータルからの画面遷移時に自動解析が走らないようにする
   useEffect(() => {
-    const lastSid = localStorage.getItem('nextchord-last-session');
-    if (lastSid && status === STATUS.IDLE) {
-      restoreSession(lastSid);
-    } else if (status === STATUS.IDLE) {
+    if (status === STATUS.IDLE) {
       fetchHistory();
     }
   }, []);
@@ -264,6 +293,16 @@ export function useNextChord() {
       setProgressMsg("セッションの復元に失敗しました。サーバーがリロードされた可能性があります。");
     }
   };
+
+  // URLパラメータ ?session=xxx からセッションを自動復元する
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const sid = params.get("session");
+    if (sid) {
+      console.log("[useNextChord] Restoring session from URL query parameter:", sid);
+      restoreSession(sid);
+    }
+  }, []);
 
   // Audio Sync Loop — 高速DOM更新 + 低速React更新
   useEffect(() => {
@@ -326,7 +365,15 @@ export function useNextChord() {
   }, [currentTime, waveform, isPlaying]);
 
   useEffect(() => { if (audioRef.current) audioRef.current.playbackRate = playbackRate; }, [playbackRate]);
-  useEffect(() => { if (audioRef.current) audioRef.current.volume = volume / 100; }, [volume]);
+  useEffect(() => {
+    if (audioRef.current) {
+      if (viewMode === 'stems') {
+        audioRef.current.volume = 0;
+      } else {
+        audioRef.current.volume = volume / 100;
+      }
+    }
+  }, [volume, viewMode]);
 
   const sessionAudioUrl = session?.audioUrl;
   useEffect(() => {
@@ -426,7 +473,9 @@ export function useNextChord() {
           handleStatusCompleted(sid);
         } else if (data.status === "failed" || data.status === "not_found") {
           es.close(); sseRef.current = null;
-          setProgressMsg(data.error || "分析に失敗しました");
+          const { message, detail } = cleanErrorMessage(data.error);
+          setProgressMsg(message || "分析に失敗しました");
+          setErrorDetail(detail);
           setStatus(STATUS.FAILED);
         }
       } catch (e) { console.error("[SSE] Parse error:", e); }
@@ -468,7 +517,7 @@ export function useNextChord() {
         setSession(prev => prev ? { ...prev, ...(data.filename && { fileName: data.filename }), ...(data.artist && { artist: data.artist }) } : prev);
       }
       if (data.status === "completed") { clearInterval(pollInterval.current); handleStatusCompleted(sid); }
-      else if (data.status === "failed") { clearInterval(pollInterval.current); setProgressMsg(data.error || "分析に失敗しました"); setStatus(STATUS.FAILED); }
+      else if (data.status === "failed") { clearInterval(pollInterval.current); const { message, detail } = cleanErrorMessage(data.error); setProgressMsg(message || "分析に失敗しました"); setErrorDetail(detail); setStatus(STATUS.FAILED); }
     } catch { pollErrorCount.current++; if (pollErrorCount.current >= 5) { clearInterval(pollInterval.current); setStatus(STATUS.FAILED); } }
   };
 
@@ -485,14 +534,22 @@ export function useNextChord() {
   const handleSeparate = async () => {
     if (!session?.id) return;
     setIsSeparating(true);
+    setSeparationProgress("分離開始...");
     try {
       await fetch(`${getApiBase()}/separate/${session.id}`, { method: "POST" });
-      const sepPoll = setInterval(() => {
-        checkSeparationStatus(session.id);
-        if (hasCleanAudioRef.current || !isSeparatingRef.current) clearInterval(sepPoll);
-      }, 2000);
-    } catch { setIsSeparating(false); }
+    } catch (e) {
+      setIsSeparating(false);
+    }
   };
+
+  // 音源分離中の自動ポーリング
+  useEffect(() => {
+    if (!isSeparating || !session?.id) return;
+    const timer = setInterval(() => {
+      checkSeparationStatus(session.id);
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [isSeparating, session?.id]);
 
   const togglePlay = () => {
     if (!audioRef.current || !session?.audioUrl) return;
@@ -1105,6 +1162,24 @@ export function useNextChord() {
     }
   };
 
+  const handleChordproChange = async (newChordpro) => {
+    if (!session?.id) return;
+    try {
+      const res = await fetch(`${getApiBase()}/result/${session.id}/chordpro`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chordpro_text: newChordpro })
+      });
+      if (!res.ok) throw new Error('ChordPro save failed');
+      setScoreVersion(prev => prev + 1);
+      await fetchUpdatedResult();
+      showToast('✅ コード・歌詞を反映し、譜面を更新しました');
+    } catch (e) {
+      console.error('ChordPro save failed:', e);
+      showToast('❌ コード・歌詞の反映に失敗しました');
+    }
+  };
+
   const handleRegenerateScore = async () => {
     if (!session?.id || isRegenerating) return;
     setIsRegenerating(true);
@@ -1196,7 +1271,7 @@ export function useNextChord() {
     // Transpose
     handleTranspose,
     // Chord / Lyric edits
-    handleChordEdit, handleChordEditByTime, handleLyricEdit,
+    handleChordEdit, handleChordEditByTime, handleLyricEdit, handleChordproChange,
     // Key helper
     getTransposedKey,
     // Navigation
@@ -1213,5 +1288,7 @@ export function useNextChord() {
     showToast,
     // Show techniques
     showTechniques, setShowTechniques,
+    // Error detail (raw log)
+    errorDetail,
   };
 }

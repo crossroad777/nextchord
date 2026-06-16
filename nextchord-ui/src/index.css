@@ -1091,29 +1091,35 @@ button:active:not(:disabled),
   background: rgba(99, 102, 241, 0.06) !important;
 }
 
-/* Segment-based layout — コードと歌詞の同期表示 */
+/* Segment-based layout — Uフレット式 均等幅グリッド */
 .cl-segments-row {
   display: block;
   line-height: 1;
 }
 
 .cl-segment {
-  display: inline-flex;
+  display: flex;
   flex-direction: column;
   align-items: flex-start;
-  vertical-align: bottom;
-  padding-right: 0.4em;
+  min-width: 0; /* allow grid shrink */
+  overflow: hidden;
+  padding-right: 0.3em;
 }
 
-/* コード名 */
+.cl-segment-active {
+  background: rgba(16, 185, 129, 0.06);
+  border-radius: 4px;
+}
+
+/* コード名（セグメント内） */
 .cl-segment-chord {
   color: var(--nc-primary);
   font-weight: 700;
-  font-size: 0.85rem;
-  line-height: 1.2;
-  min-height: 1.2em;
+  font-size: 0.88rem;
+  line-height: 1.4;
+  min-height: 1.4em;
   white-space: nowrap;
-  text-shadow: 0 0 12px rgba(99, 102, 241, 0.15);
+  padding: 1px 0;
 }
 
 .cl-chord-spacer {
@@ -1161,15 +1167,16 @@ button:active:not(:disabled),
   to { opacity: 1; transform: translateX(0) scale(1); }
 }
 
-/* 歌詞テキスト */
+/* 歌詞テキスト（セグメント内） */
 .cl-segment-lyric {
   font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'メイリオ', sans-serif;
   color: var(--nc-text);
   font-weight: 400;
-  font-size: 0.95rem;
+  font-size: 1rem;
   line-height: 1.7;
   letter-spacing: 0.02em;
   white-space: pre-wrap;
+  word-break: break-all;
   font-feature-settings: 'palt' 1;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -1288,15 +1295,30 @@ button:active:not(:disabled),
   color: var(--nc-primary);
   font-weight: 700;
   cursor: pointer;
-  transition: color var(--nc-transition-fast), text-shadow var(--nc-transition-fast);
+  transition: color var(--nc-transition-fast), text-shadow var(--nc-transition-fast), transform var(--nc-transition-fast);
   display: inline-block;
   min-height: 1.2em;
   white-space: nowrap;
+  transform-origin: bottom center;
 }
 
 .cl-chord-text:hover {
   color: var(--nc-secondary);
   text-shadow: 0 0 12px rgba(139, 92, 246, 0.3);
+}
+
+/* Playback Chord Progress Highlight */
+.cl-chord-active,
+.cp-chord-active {
+  color: #10b981 !important;
+  text-shadow: 0 0 16px rgba(16, 185, 129, 0.8), 0 0 6px rgba(16, 185, 129, 0.4) !important;
+  transform: scale(1.08);
+}
+
+[data-theme="light"] .cl-chord-active,
+[data-theme="light"] .cp-chord-active {
+  color: #059669 !important;
+  text-shadow: 0 0 6px rgba(5, 150, 105, 0.2) !important;
 }
 
 /* Chord edit input */
@@ -1314,7 +1336,7 @@ button:active:not(:disabled),
   box-shadow: 0 0 0 3px var(--nc-primary-soft);
 }
 
-/* Chord row — フラット表示 */
+/* Chord row — フラット表示（フォールバック用） */
 .cl-chord-row {
   display: flex;
   flex-wrap: wrap;
@@ -1324,18 +1346,29 @@ button:active:not(:disabled),
   min-height: 1.6em;
 }
 
-/* Segment-based layout: chord directly above lyrics */
+/* Segment-based grid layout: コードが歌詞の上に均等幅で配置 */
 .cl-segment-row {
-  display: flex;
-  flex-wrap: nowrap;
+  display: grid !important;
   gap: 0;
-  padding: 0;
+  padding: 2px 0;
   min-height: auto;
 }
 .cl-segment-row.cl-chord-row {
   padding-bottom: 0;
+  flex-wrap: unset;
 }
-/* Removed duplicate cl-segment to let the inline-flex definition take effect */
+
+/* Fallback chord-only grid row (instrumental lines) */
+.cl-chord-row-grid {
+  display: grid !important;
+  gap: 0;
+  padding: 4px 0;
+}
+.cl-chord-grid-item {
+  padding: 2px 4px;
+}
+
+/* Removed duplicate cl-segment to let grid definition take effect */
 .cl-lyric-row {
   display: flex;
   flex-wrap: nowrap;
@@ -1464,17 +1497,38 @@ button:active:not(:disabled),
   margin-bottom: 1.5rem;
 }
 
-.nc-error-detail {
-  font-family: 'JetBrains Mono', monospace;
-  font-size: 0.75rem;
-  color: var(--nc-error);
-  background: rgba(239, 68, 68, 0.06);
-  border: 1px solid rgba(239, 68, 68, 0.1);
-  border-radius: var(--nc-radius-md);
-  padding: 0.75rem 1.25rem;
-  margin-bottom: 2rem;
+.nc-error-detail-collapse {
+  margin-bottom: 1.5rem;
   max-width: 100%;
+}
+
+.nc-error-detail-toggle {
+  font-size: 0.8rem;
+  color: var(--nc-text-secondary);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.2s;
+  user-select: none;
+}
+.nc-error-detail-toggle:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.nc-error-detail-log {
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  font-size: 0.7rem;
+  color: var(--nc-text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--nc-radius-md);
+  padding: 0.75rem 1rem;
+  margin-top: 0.5rem;
+  max-height: 200px;
+  overflow-y: auto;
+  white-space: pre-wrap;
   word-break: break-all;
+  line-height: 1.5;
 }
 
 .nc-error-actions {
@@ -2269,6 +2323,9 @@ button:active:not(:disabled),
 }
 .cp-chord-name {
   margin-bottom: 2px;
+  display: inline-block;
+  transition: color var(--nc-transition-fast), text-shadow var(--nc-transition-fast), transform var(--nc-transition-fast);
+  transform-origin: bottom center;
 }
 
 /* Diagram wrapper */
@@ -2303,7 +2360,7 @@ button:active:not(:disabled),
   text-shadow: none;
 }
 
-/* ─── Lyrics Text ─── */
+/* ─── Lyrics Text (legacy grid) ─── */
 .cp-lyrics {
   grid-row: 2;
   justify-self: start;
@@ -2313,6 +2370,69 @@ button:active:not(:disabled),
   line-height: 1.5;
   white-space: nowrap;
   font-family: 'Noto Sans JP', 'Inter', sans-serif;
+}
+
+/* ─── Inline Lyrics Layout (U-FRET style) ─── */
+.cp-inline-lyrics {
+  width: 100%;
+  line-height: 2.8;
+  padding-top: 0.2em;
+  font-family: 'Noto Sans JP', 'Inter', sans-serif;
+  word-break: keep-all;
+  overflow-wrap: break-word;
+}
+
+.cp-inline-segment {
+  position: relative;
+  display: inline;
+}
+
+.cp-inline-chord {
+  position: absolute;
+  top: -1.3em;
+  left: 0;
+  font-weight: 700;
+  font-size: 0.9em;
+  color: var(--nc-primary);
+  line-height: 1.2;
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.cp-inline-chord .cp-chord-name {
+  margin-bottom: 0;
+  display: inline-block;
+  transition: color var(--nc-transition-fast), text-shadow var(--nc-transition-fast), transform var(--nc-transition-fast);
+  transform-origin: bottom center;
+}
+
+.cp-inline-chord .cp-diagram-wrapper.inline-mode {
+  display: block;
+}
+.cp-inline-chord .cp-diagram-wrapper.hover-mode {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--nc-surface-2);
+  border: 1px solid var(--nc-border);
+  border-radius: var(--nc-radius-md);
+  padding: 6px;
+  box-shadow: var(--nc-shadow-lg);
+  z-index: 50;
+  margin-bottom: 4px;
+}
+.cp-inline-chord:hover .cp-diagram-wrapper.hover-mode {
+  display: block;
+}
+
+.cp-inline-lyric-text {
+  color: var(--nc-text);
+}
+
+[data-theme="light"] .cp-inline-chord {
+  text-shadow: none;
 }
 
 /* ─── Empty Line ─── */
@@ -2626,9 +2746,10 @@ button:active:not(:disabled),
 
 /* Rhythm monospace alignment for sheet view */
 .cp-rhythm-line .cp-lyrics {
-  font-family: 'JetBrains Mono', 'Consolas', monospace !important;
-  white-space: pre !important;
-  letter-spacing: 0.05em !important;
+  display: none !important;
+}
+.cp-rhythm-line .cp-measure {
+  grid-template-rows: auto !important;
 }
 
 .cp-rhythm-line .lyric-segment-edit-input {

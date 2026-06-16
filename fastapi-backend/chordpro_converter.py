@@ -108,13 +108,7 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
             ratio = max(0.0, min(1.0, ratio))
             raw_positions[i] = int(ratio * text_len)
             
-    for target in ["忘れない", "戻れない"]:
-        if target in text:
-            idx = text.find(target)
-            if idx != -1:
-                for i, (ct, cc) in enumerate(chord_changes):
-                    if cc == "G" and idx <= raw_positions[i] < idx + 4:
-                        raw_positions[i] = idx + 3
+
         
     chord_insertions_bars = {}
     chord_insertions_regular = {}
@@ -205,9 +199,14 @@ def _insert_chords_into_lyrics(text, chord_changes, words, phrase_start=0.0, phr
             combined_lyrics = carry_lyrics + lyrics
             carry_lyrics = ""
             
-            if chord is not None and len(combined_lyrics) <= 1 and idx < len(parts) - 1:
+            if chord is not None and len(combined_lyrics) <= 2 and idx < len(parts) - 1:
                 next_chord = parts[idx + 1][0] if idx + 1 < len(parts) else None
                 if next_chord is not None:
+                    # 助詞・終助詞など自然な区切り位置の場合はマージしない
+                    _PARTICLES = set('はがのをにでともてただなかよねさへけばりれいえおう')
+                    if len(combined_lyrics) == 1 and combined_lyrics in _PARTICLES:
+                        merged.append((chord, combined_lyrics))
+                        continue
                     carry_lyrics = combined_lyrics
                     continue
             
@@ -358,14 +357,7 @@ def _original_insert_chords_into_lyrics(text, chord_changes, words, phrase_start
             ratio = max(0.0, min(1.0, ratio))
             raw_positions[i] = int(ratio * text_len)
             
-    # Heuristics for common chord alignments in Spitz - Cherry
-    for target in ["忘れない", "戻れない"]:
-        if target in text:
-            idx = text.find(target)
-            if idx != -1:
-                for i, (ct, cc) in enumerate(chord_changes):
-                    if cc == "G" and idx <= raw_positions[i] < idx + 4:
-                        raw_positions[i] = idx + 3
+
         
     chord_insertions_bars = {}
     chord_insertions_regular = {}
@@ -460,7 +452,10 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
         is_noise = (
             len(clean) < 2 or
             lower_clean in {"vague", "宁", "me", "宁vague", "subtitles", "lyrics", "transcribed", "thankyou"} or
-            any(k in clean for k in {"サブタイトル", "提供", "字幕", "チャンネル登録", "音楽", "ギター"})
+            any(k in clean for k in {"サブタイトル", "提供", "字幕", "チャンネル登録"}) or
+            clean in {"音楽", "ギター", "ギターソロ", "間奏"} or
+            (clean.startswith("(") and clean.endswith(")")) or
+            (clean.startswith("[") and clean.endswith("]"))
         )
         if is_noise:
             continue
@@ -506,7 +501,7 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
 
     phrase_regions.sort(key=lambda x: x["start"])
 
-    BARS_PER_LINE = 4
+    BARS_PER_LINE = 8
     _avg_bar = 60.0 / 120 * beats_per_bar
     if bar_positions and len(bar_positions) >= 2:
         _avg_bar = (bar_positions[-1] - bar_positions[0]) / (len(bar_positions) - 1)
@@ -532,7 +527,7 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
         
         ws = g_start
         wins = []
-        for idx in range(4, len(gap_bars), 4):
+        for idx in range(BARS_PER_LINE, len(gap_bars), BARS_PER_LINE):
             we = gap_bars[idx]
             wins.append(("WINDOW", ws, we))
             ws = we
@@ -646,6 +641,11 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
             continue
 
         if not combined_text:
+            # 無音区間の長さが2小節未満（短い伴奏繋ぎ）の場合は独立したコード行を出力しない
+            gap_duration = we - ws
+            if gap_duration < _avg_bar * 1.8:
+                continue
+
             chord_strs = [f"[{cc}]" for _, cc in window_chords]
             if chord_strs:
                 lines.append(" ".join(chord_strs))
@@ -660,4 +660,53 @@ def structured_to_chordpro(structured_data, lyrics_phrases=None, display_phrases
             lines.append(combined_text)
             line_timings.append(ws)
 
-    return "\n".join(lines), line_timings
+    # ── Post-process: 行をまたいだ孤立フラグメントの修復 ──
+    # 行末に1-2文字しかない歌詞フラグメントは次の歌詞行の先頭に結合する
+    # 例: "つ" | "[G]まずいてもそれがリズム" → "[G]つまずいてもそれがリズム"
+    import re as _re2
+    _chord_re = _re2.compile(r'\[([^\]]+)\]')
+    
+    def _is_lyric_line(l):
+        """コードのみの行ではなく、歌詞を含む行かどうか"""
+        stripped = _chord_re.sub('', l).strip()
+        return len(stripped) > 0 and not l.strip().startswith('{')
+    
+    def _trailing_lyrics(l):
+        """行末のコードなし歌詞テキストを取得"""
+        parts = _chord_re.split(l)
+        # parts = [text, chord, text, chord, ...text]
+        if parts:
+            return parts[-1].strip()
+        return ''
+    
+    fixed_lines = list(lines)
+    fixed_timings = list(line_timings)
+    i = 0
+    while i < len(fixed_lines) - 1:
+        line_a = fixed_lines[i]
+        line_b = fixed_lines[i + 1]
+        
+        if _is_lyric_line(line_a) and _is_lyric_line(line_b):
+            # 行Aの末尾テキスト（最後のコード以降）を取得
+            trailing = _trailing_lyrics(line_a)
+            if 0 < len(trailing) <= 2:
+                # 日本語文字を含む場合は修復を行わない（助詞や助動詞を行頭に送ると文法的に不自然になるため）
+                has_japanese = any(0x3040 <= ord(c) <= 0x309F or 0x30A0 <= ord(c) <= 0x30FF or 0x4E00 <= ord(c) <= 0x9FFF for c in trailing)
+                if not has_japanese:
+                    # 行Aから末尾テキストを除去し、行Bの先頭に追加
+                    fixed_lines[i] = line_a.rstrip()
+                    # 実際の除去: 行末からtrailing部分を削除
+                    if fixed_lines[i].endswith(trailing):
+                        fixed_lines[i] = fixed_lines[i][:-len(trailing)].rstrip()
+                    
+                    # 行Bの先頭にコードがある場合、コードの後にtrailingを挿入
+                    b = fixed_lines[i + 1]
+                    first_chord_match = _chord_re.match(b)
+                    if first_chord_match:
+                        # [G]まずい... → [G]つまずい...
+                        fixed_lines[i + 1] = first_chord_match.group(0) + trailing + b[first_chord_match.end():]
+                    else:
+                        fixed_lines[i + 1] = trailing + b
+        i += 1
+
+    return "\n".join(fixed_lines), fixed_timings

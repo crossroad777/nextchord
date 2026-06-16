@@ -148,6 +148,22 @@ def clean_hallucinated_endings(lyrics_phrases: list) -> list:
             if re.search(pat, text, re.IGNORECASE):
                 is_hallucination = True
                 break
+        
+        if not is_hallucination:
+            # Noise patterns check (Whisper phantom texts/short noise)
+            clean_text = re.sub(r'\s+', '', text).replace("・", "").replace("…", "").strip()
+            lower_clean = clean_text.lower()
+            is_noise = (
+                len(clean_text) < 2 or
+                lower_clean in {"vague", "宁", "me", "宁vague", "subtitles", "lyrics", "transcribed", "thankyou"} or
+                any(k in clean_text for k in {"サブタイトル", "提供", "字幕", "チャンネル登録", "無視してください", "インスト部分", "文字起こし", "桜の花びら", "歩き出す未来", "巡り会える"}) or
+                clean_text in {"音楽", "ギター", "ギターソロ", "間奏"} or
+                (clean_text.startswith("(") and clean_text.endswith(")")) or
+                (clean_text.startswith("[") and clean_text.endswith("]"))
+            )
+            if is_noise:
+                is_hallucination = True
+                
         if not is_hallucination:
             cleaned.append(phrase)
 

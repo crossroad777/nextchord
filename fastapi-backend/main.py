@@ -10,10 +10,7 @@ MP3ファイルをアップロードし、コード抽出パイプラインを�
 """
 # Section label fix: Chorus -> Verse A (analyze_sections update)
 
-# cuDNN無効化: CTranslate2(faster-whisper)とPyTorch cuDNN 9の
-# DLLシンボル競合 (cudnnGetLibConfig) によるクラッシュを回避
-import torch
-torch.backends.cudnn.enabled = False
+
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Response, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -64,53 +61,23 @@ chroma_processor = None
 chord_processor = None
 whisper_model = None
 
-try:
-    from faster_whisper import WhisperModel as FasterWhisperModel
-    _use_faster_whisper = True
-    print("Using faster-whisper (CTranslate2 backend)")
-except ImportError:
-    import whisper
-    _use_faster_whisper = False
-    print("Using openai-whisper (fallback)")
-import librosa
+# Lazy loaded functions and modules
+transcribe_notes = None
+_band_score_filter = None
+notes_to_tab_data = None
+notes_to_musicxml = None
+estimate_key_from_chords = None
+generate_chord_strum_notes = None
+TUNING_PRESETS = {}
+notes_to_gp5 = None
+_use_faster_whisper = True
+FasterWhisperModel = None
+whisper = None
+librosa = None
+
 import csv
 import itertools
 import re
-
-try:
-    from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
-    from madmom.audio.chroma import DeepChromaProcessor
-    from madmom.features.chords import DeepChromaChordRecognitionProcessor
-    from madmom.features.key import CNNKeyRecognitionProcessor
-except ImportError as e:
-    import traceback
-    print(f"Warning: madmom not available: {e}")
-    traceback.print_exc()
-    RNNBeatProcessor = None
-    DBNBeatTrackingProcessor = None
-    DeepChromaProcessor = None
-    DeepChromaChordRecognitionProcessor = None
-    CNNKeyRecognitionProcessor = None
-
-try:
-    from note_transcription import transcribe_notes, notes_to_summary, _band_score_filter
-    from tab_generator import notes_to_tab_data, notes_to_musicxml, estimate_key_from_chords, generate_chord_strum_notes
-    from tab_generator import TUNING_PRESETS
-except ImportError as e:
-    import traceback
-    print(f"Warning: note_transcription/tab_generator not available: {e}")
-    traceback.print_exc()
-    transcribe_notes = None
-    _band_score_filter = None
-    notes_to_tab_data = None
-    notes_to_musicxml = None
-    TUNING_PRESETS = {}
-
-try:
-    from gp5_export import notes_to_gp5
-except ImportError as e:
-    print(f"Warning: gp5_export not available: {e}")
-    notes_to_gp5 = None
 
 
 
@@ -196,17 +163,110 @@ print(f"Backend initializing. FFMPEG_PATH: {FFMPEG_PATH}, YT_DLP_PATH: {YT_DLP_P
 
 
 # --- GLOBAL MODELS (WARM UP) ---
-beat_processor = None
-beat_tracker = None
-key_processor = None
-chroma_processor = None
-chord_processor = None
-whisper_model = None
+
+def init_models_lazy(force_local_whisper=False):
+    """AIモデル（Beats, Key, Chords, Whisper, librosa, gp5, note_transcription 等）を必要時に遅延ロードする"""
+    global beat_processor, beat_tracker, key_processor, chroma_processor, chord_processor, whisper_model
+    global transcribe_notes, _band_score_filter, notes_to_tab_data, notes_to_musicxml, estimate_key_from_chords, generate_chord_strum_notes, TUNING_PRESETS
+    global notes_to_gp5, _use_faster_whisper, FasterWhisperModel, whisper, librosa
+
+    # 0. Load librosa
+    if librosa is None:
+        print("[LAZY] Loading librosa...")
+        import librosa as lr
+        librosa = lr
+
+    # 1. Load madmom models if needed
+    if beat_processor is None:
+        print("[LAZY] Loading madmom Models (Beats, Key, Chords)...")
+        try:
+            from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
+            from madmom.audio.chroma import DeepChromaProcessor
+            from madmom.features.chords import DeepChromaChordRecognitionProcessor
+            from madmom.features.key import CNNKeyRecognitionProcessor
+            beat_processor = RNNBeatProcessor()
+            beat_tracker = DBNBeatTrackingProcessor(fps=100)
+            key_processor = CNNKeyRecognitionProcessor()
+            chroma_processor = DeepChromaProcessor()
+            chord_processor = DeepChromaChordRecognitionProcessor()
+            print("[LAZY] madmom Models loaded successfully.")
+        except Exception as e:
+            print(f"[LAZY] [ERR] Failed to load madmom models: {e}")
+            import traceback; traceback.print_exc()
+            
+    # 2. Load Whisper model if needed (only if NOT using Groq API)
+    import os
+    groq_key = os.environ.get("GROQ_API_KEY", "").strip()
+    if groq_key and not force_local_whisper:
+        print("[LAZY] Groq API key found. Skipping local Whisper model load.")
+    elif whisper_model is None:
+        print("[LAZY] Loading local Whisper Model (medium size)...")
+        try:
+            import torch
+            torch.backends.cudnn.enabled = False
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+            print(f"[LAZY] PyTorch device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device == "cuda" else ""))
+            whisper_size = os.getenv("WHISPER_MODEL_SIZE", "medium")
+            
+            try:
+                from faster_whisper import WhisperModel as FWM
+                FasterWhisperModel = FWM
+                _use_faster_whisper = True
+                print("Using faster-whisper (CTranslate2 backend)")
+            except ImportError:
+                import whisper as o_whisper
+                whisper = o_whisper
+                _use_faster_whisper = False
+                print("Using openai-whisper (fallback)")
+
+            if _use_faster_whisper:
+                compute_type = "float16" if device == "cuda" else "int8"
+                cpu_threads = 2 if device == "cpu" else 4
+                whisper_model = FasterWhisperModel(
+                    whisper_size, 
+                    device=device, 
+                    compute_type=compute_type,
+                    cpu_threads=cpu_threads
+                )
+                print(f"[LAZY] local faster-whisper '{whisper_size}' loaded on {device} ({compute_type})")
+            else:
+                whisper_model = whisper.load_model(whisper_size, device=device)
+                print(f"[LAZY] local openai-whisper '{whisper_size}' loaded on {device}")
+        except Exception as e:
+            print(f"[LAZY] [ERR] Failed to load local Whisper model: {e}")
+            import traceback; traceback.print_exc()
+
+    # 3. Load note_transcription and tab_generator
+    if transcribe_notes is None:
+        print("[LAZY] Loading note_transcription & tab_generator...")
+        try:
+            import note_transcription as nt
+            transcribe_notes = nt.transcribe_notes
+            _band_score_filter = nt._band_score_filter
+            import tab_generator as tg
+            notes_to_tab_data = tg.notes_to_tab_data
+            notes_to_musicxml = tg.notes_to_musicxml
+            estimate_key_from_chords = tg.estimate_key_from_chords
+            generate_chord_strum_notes = tg.generate_chord_strum_notes
+            TUNING_PRESETS = tg.TUNING_PRESETS
+            print("[LAZY] note_transcription & tab_generator loaded successfully.")
+        except ImportError as e:
+            print(f"[LAZY] [ERR] Failed to load note_transcription / tab_generator: {e}")
+            import traceback; traceback.print_exc()
+
+    # 4. Load gp5_export
+    if notes_to_gp5 is None:
+        print("[LAZY] Loading gp5_export...")
+        try:
+            from gp5_export import notes_to_gp5 as n2g
+            notes_to_gp5 = n2g
+            print("[LAZY] gp5_export loaded successfully.")
+        except ImportError as e:
+            print(f"[LAZY] [ERR] Failed to load gp5_export: {e}")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global beat_processor, beat_tracker, key_processor, chroma_processor, chord_processor, whisper_model
-    print("Loading AI Models (Beats, Key, Chords, Whisper)...")
     print("Checking deno environment...")
     import shutil
     import subprocess
@@ -216,43 +276,6 @@ async def lifespan(app: FastAPI):
         print("deno --version stdout:", r.stdout.strip(), "stderr:", r.stderr.strip(), "code:", r.returncode)
     except Exception as e:
         print("Failed to run deno:", e)
-    try:
-        # Load madmom models
-        if RNNBeatProcessor:
-            beat_processor = RNNBeatProcessor()
-            beat_tracker = DBNBeatTrackingProcessor(fps=100)
-            key_processor = CNNKeyRecognitionProcessor()
-            chroma_processor = DeepChromaProcessor()
-            chord_processor = DeepChromaChordRecognitionProcessor()
-        else:
-            print("WARNING: madmom not available. Skipping beat/chord/key models.")
-        
-        # Load whisper model (GPU自動検出 + 環境変数対応)
-        import torch
-        import os
-        device = "cuda" if torch.cuda.is_available() else "cpu"
-        print(f"[FIRE] PyTorch device: {device}" + (f" ({torch.cuda.get_device_name(0)})" if device == "cuda" else ""))
-        # 日本語認識精度維持のためデフォルトは "medium"。環境変数で変更可能。
-        whisper_size = os.getenv("WHISPER_MODEL_SIZE", "medium")
-        
-        if _use_faster_whisper:
-            compute_type = "float16" if device == "cuda" else "int8"
-            # CPU環境(2 vCPU)でのスレッド競合を防ぎ、動作を高速化するために cpu_threads=2 を指定
-            cpu_threads = 2 if device == "cpu" else 4
-            whisper_model = FasterWhisperModel(
-                whisper_size, 
-                device=device, 
-                compute_type=compute_type,
-                cpu_threads=cpu_threads
-            )
-            print(f"AI Models loaded. faster-whisper '{whisper_size}' on {device} ({compute_type})")
-        else:
-            whisper_model = whisper.load_model(whisper_size, device=device)
-            print(f"AI Models loaded. openai-whisper '{whisper_size}' on {device}")
-    except Exception as e:
-        import traceback
-        print("CRITICAL: Failed to load models in lifespan.")
-        traceback.print_exc()
     
     # Pre-initialize Janome tokenizer and chord templates to avoid first-run delay
     try:
@@ -513,6 +536,7 @@ from pipeline import run_pipeline as _run_pipeline_impl
 
 def run_pipeline(session_id: str, session_dir: Path, wav_path: Path):
     """パイプライン実行 (pipeline.py に委譲)"""
+    init_models_lazy()
     ctx = {
         "sessions": sessions,
         "save_session": save_session,
@@ -842,6 +866,17 @@ def run_separation(session_id: str, session_dir: Path, wav_path: Path):
             env={"PYTHONIOENCODING": "utf-8", **os.environ}
         )
         
+        # Re-run chord detection on vocals/drums removed audio for superior accuracy
+        try:
+            from pipeline import reanalyze_chords_with_stems
+            ctx = {
+                "sessions": sessions,
+                "save_session": save_session,
+            }
+            reanalyze_chords_with_stems(session_id, session_dir, ctx)
+        except Exception as re_err:
+            print(f"[{session_id}] [RE-ANALYSIS] Failed to reanalyze chords: {re_err}")
+            
         sessions[session_id]["separation_progress"] = "分離完了"
         sessions[session_id]["is_separating"] = False
         sessions[session_id]["has_clean_audio"] = True
@@ -881,19 +916,27 @@ async def get_separation_status(session_id: str):
         raise HTTPException(status_code=404, detail="セッションが見つかりません")
     
     session = sessions[session_id]
+    session_dir = Path(session["session_dir"])
+    
+    # 6ステムディレクトリまたは旧4ステムディレクトリの存在を確認
+    has_clean = (session_dir / "htdemucs_6s").exists() or (session_dir / "htdemucs").exists()
+    
     return {
         "session_id": session_id,
         "is_separating": session.get("is_separating", False),
         "progress": session.get("separation_progress", "未開始"),
-        "has_clean_audio": (Path(session["session_dir"]) / "htdemucs").exists(),
-        "error": session.get("separation_error")
+        "has_clean_audio": has_clean,
+        "error": session.get("separation_error"),
+        "debug_session_dir": str(session_dir),
+        "debug_exists_6s": (session_dir / "htdemucs_6s").exists(),
+        "debug_exists_4s": (session_dir / "htdemucs").exists()
     }
 
 
 @app.post("/reanalyze/{session_id}")
 async def reanalyze_guitar(session_id: str, background_tasks: BackgroundTasks):
     """
-    分離されたギター音源 (other.wav) を使用して転記を再実行する
+    分離されたギター音源 (guitar.wav) を使用して転記を再実行する
     """
     if session_id not in sessions:
         raise HTTPException(status_code=404, detail="セッションが見つかりません")
@@ -901,9 +944,11 @@ async def reanalyze_guitar(session_id: str, background_tasks: BackgroundTasks):
     session = sessions[session_id]
     session_dir = Path(session["session_dir"])
     
-    # Demucsの出力から guitar (other) を探す
-    # 構造: session_dir / htdemucs / {song_name} / other.wav
-    ht_dir = session_dir / "htdemucs"
+    # Demucsの出力から guitar.wav を探す (なければ other.wav へフォールバック)
+    ht_dir = session_dir / "htdemucs_6s"
+    if not ht_dir.exists():
+        ht_dir = session_dir / "htdemucs"
+        
     if not ht_dir.exists():
         raise HTTPException(status_code=400, detail="音源分離が完了していません。先に分離を実行してください。")
     
@@ -912,22 +957,21 @@ async def reanalyze_guitar(session_id: str, background_tasks: BackgroundTasks):
     if not song_dirs:
         raise HTTPException(status_code=400, detail="分離データが見つかりません")
     
-    guitar_wav = song_dirs[0] / "other.wav"
+    guitar_wav = song_dirs[0] / "guitar.wav"
     if not guitar_wav.exists():
-        raise HTTPException(status_code=400, detail="ギター音源 (other.wav) が見つかりません")
+        guitar_wav = song_dirs[0] / "other.wav"
+        
+    if not guitar_wav.exists():
+        raise HTTPException(status_code=400, detail="ギター音源 (guitar.wav/other.wav) が見つかりません")
     
     session["status"] = SessionStatus.PENDING
     session["progress"] = "ギター音源を解析中 (Deep Analysis)..."
     session["is_deep_analysis"] = True
-    # guitar_wav_path を保存して note_transcription に渡す
     session["guitar_wav_path"] = str(guitar_wav)
     save_session(session_id)
     
-    # ★ 重要: Whisper/Beats/Key は元のフル音源 (converted.wav) で実行
-    #    Notes だけ guitar_wav を direct に使う
     original_wav = session_dir / "converted.wav"
     if not original_wav.exists():
-        # fallback: session に保存されている wav_path を使う
         original_wav = Path(session.get("wav_path", str(session_dir / "converted.wav")))
     
     print(f"[reanalyze] session={session_id}")
@@ -1175,6 +1219,42 @@ async def update_chords(session_id: str, request: Request):
     if "result" in sessions[session_id] and sessions[session_id]["result"]:
         sessions[session_id]["result"]["structured_data"] = structured_data
 
+    # ChordProテキストを再生成して保存
+    session_json_path = session_dir / "session.json"
+    if session_json_path.exists():
+        with open(session_json_path, "r", encoding="utf-8") as f:
+            session_data = json.load(f)
+    else:
+        session_data = session
+
+    if "result" not in session_data:
+        session_data["result"] = {}
+    session_data["result"]["structured_data"] = structured_data
+
+    try:
+        from chordpro_converter import structured_to_chordpro
+        result_dict = session_data.get("result", {})
+        chordpro_text, chordpro_line_timings = structured_to_chordpro(
+            structured_data,
+            lyrics_phrases=result_dict.get("lyrics_phrases"),
+            display_phrases=result_dict.get("display_phrases"),
+            title="",
+            artist=session_data.get("artist", ""),
+            key=session_data.get("key", ""),
+            beats_per_bar=result_dict.get("beats_per_bar", 4),
+            bar_positions=result_dict.get("bar_positions"),
+        )
+        session_data["result"]["chordpro_text"] = chordpro_text
+        session_data["result"]["chordpro_line_timings"] = chordpro_line_timings
+        if "result" in session:
+            session["result"]["chordpro_text"] = chordpro_text
+            session["result"]["chordpro_line_timings"] = chordpro_line_timings
+    except Exception as cp_err:
+        print(f"[{session_id}] Failed to regenerate ChordPro in update_chords: {cp_err}")
+
+    with open(session_json_path, "w", encoding="utf-8") as f:
+        json.dump(session_data, f, ensure_ascii=False, indent=2)
+
     print(f"[{session_id}] Updated {changed} chord(s)")
     return {"status": "ok", "changed": changed}
 
@@ -1212,11 +1292,130 @@ async def update_lyrics(session_id: str, request: Request):
     if "result" in session:
         session["result"]["display_phrases"] = new_phrases
 
+    # structured_data を取得
+    structured_data = session_data.get("result", {}).get("structured_data", [])
+    if not structured_data:
+        sd_path = session_dir / "structured_data.json"
+        if sd_path.exists():
+            with open(sd_path, "r", encoding="utf-8") as f:
+                structured_data = json.load(f)
+
+    # ChordProテキストを再生成して保存
+    if structured_data:
+        try:
+            from chordpro_converter import structured_to_chordpro
+            result_dict = session_data.get("result", {})
+            chordpro_text, chordpro_line_timings = structured_to_chordpro(
+                structured_data,
+                lyrics_phrases=result_dict.get("lyrics_phrases"),
+                display_phrases=new_phrases,
+                title="",
+                artist=session_data.get("artist", ""),
+                key=session_data.get("key", ""),
+                beats_per_bar=result_dict.get("beats_per_bar", 4),
+                bar_positions=result_dict.get("bar_positions"),
+            )
+            session_data["result"]["chordpro_text"] = chordpro_text
+            session_data["result"]["chordpro_line_timings"] = chordpro_line_timings
+            if "result" in session:
+                session["result"]["chordpro_text"] = chordpro_text
+                session["result"]["chordpro_line_timings"] = chordpro_line_timings
+        except Exception as cp_err:
+            print(f"[{session_id}] Failed to regenerate ChordPro in update_lyrics: {cp_err}")
+
     with open(session_json_path, "w", encoding="utf-8") as f:
         json.dump(session_data, f, ensure_ascii=False, indent=2)
 
     print(f"[{session_id}] Updated lyrics ({len(new_phrases)} phrases)")
     return {"status": "ok", "phrases": len(new_phrases)}
+
+
+@app.patch("/result/{session_id}/chordpro")
+async def update_chordpro(session_id: str, request: Request):
+    """
+    ChordProテキストを一括保存し、MusicXMLを自動再生成する
+    Body: { "chordpro_text": "..." }
+    """
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="Session not found")
+        
+    body = await request.json()
+    chordpro_text = body.get("chordpro_text")
+    if not chordpro_text:
+        raise HTTPException(status_code=400, detail="chordpro_text is required")
+        
+    session = sessions[session_id]
+    session_dir = Path(session["session_dir"])
+    
+    # 1. 必要なデータをロード
+    structured = await _get_structured_data(session_id)
+    if not structured:
+        raise HTTPException(status_code=404, detail="No structured data found")
+        
+    result = session.get("result", {})
+    display_phrases = result.get("display_phrases", [])
+    if not display_phrases:
+        display_phrases = result.get("lyrics_phrases", [])
+        
+    beats_path = session_dir / "beats.txt"
+    v_time = []
+    if beats_path.exists():
+        v_time = list(np.loadtxt(str(beats_path)))
+        
+    bar_positions = result.get("bar_positions", [])
+    
+    # 2. マージ実行
+    try:
+        from chordpro_parser import merge_chordpro_changes
+        new_structured, new_display_phrases = merge_chordpro_changes(
+            chordpro_text,
+            structured,
+            display_phrases,
+            v_time,
+            bar_positions
+        )
+    except Exception as e:
+        print(f"ChordPro merge failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"ChordProのパースに失敗しました: {e}")
+        
+    # 3. 保存
+    sd_path = session_dir / "structured_data.json"
+    with open(sd_path, "w", encoding="utf-8") as f:
+        json.dump(new_structured, f, ensure_ascii=False, indent=2)
+        
+    session_json_path = session_dir / "session.json"
+    if session_json_path.exists():
+        with open(session_json_path, "r", encoding="utf-8") as f:
+            session_data = json.load(f)
+    else:
+        session_data = session.copy()
+        
+    if "result" not in session_data:
+        session_data["result"] = {}
+    session_data["result"]["structured_data"] = new_structured
+    session_data["result"]["display_phrases"] = new_display_phrases
+    session_data["result"]["chordpro_text"] = chordpro_text
+    
+    session["result"]["structured_data"] = new_structured
+    session["result"]["display_phrases"] = new_display_phrases
+    session["result"]["chordpro_text"] = chordpro_text
+    
+    with open(session_json_path, "w", encoding="utf-8") as f:
+        json.dump(session_data, f, ensure_ascii=False, indent=2)
+        
+    print(f"[{session_id}] ChordPro changes merged and saved.")
+    
+    # 4. MusicXML 再生成
+    try:
+        await regenerate_musicxml(session_id)
+        print(f"[{session_id}] MusicXML successfully regenerated after ChordPro merge.")
+    except Exception as e:
+        print(f"[{session_id}] MusicXML regeneration failed: {e}")
+        raise HTTPException(status_code=500, detail=f"MusicXMLの再生成に失敗しました: {e}")
+        
+    return {"status": "ok", "message": "ChordPro updated and score regenerated"}
 
 @app.post("/result/{session_id}/regenerate-musicxml")
 async def regenerate_musicxml(session_id: str):
@@ -1528,6 +1727,49 @@ async def get_file(session_id: str, filename: str):
         raise HTTPException(status_code=404, detail="ファイルが見つかりません")
     
     return FileResponse(file_path, filename=safe_filename)
+
+
+@app.get("/result/{session_id}/stems/{stem_name}")
+async def get_stem_file(session_id: str, stem_name: str):
+    """
+    指定されたステムの音声ファイルを配信する（シーク・部分要求対応）
+    """
+    if session_id not in sessions:
+        raise HTTPException(status_code=404, detail="セッションが見つかりません")
+        
+    session = sessions[session_id]
+    session_dir = Path(session["session_dir"])
+    
+    # 特例: original または converted
+    if stem_name in ("original", "converted"):
+        mp3_path = session_dir / "playback.mp3"
+        if mp3_path.exists():
+            return FileResponse(mp3_path, filename="playback.mp3", media_type="audio/mpeg")
+        wav_path = session_dir / "converted.wav"
+        if wav_path.exists():
+            return FileResponse(wav_path, filename="converted.wav", media_type="audio/wav")
+        raise HTTPException(status_code=404, detail="オリジナル音声が見つかりません")
+        
+    # 特例: accompaniment または clean (ボーカル除去)
+    if stem_name in ("accompaniment", "clean"):
+        clean_path = session_dir / "clean.wav"
+        if clean_path.exists():
+            return FileResponse(clean_path, filename="accompaniment.wav", media_type="audio/wav")
+        raise HTTPException(status_code=404, detail="ボーカル除去（伴奏）音声が見つかりません")
+        
+    # ステムファイルパス: htdemucs_6s/converted/{stem_name}.wav
+    song_stem = "converted"  # デモ等の出力に基づき固定
+    stem_path = session_dir / "htdemucs_6s" / song_stem / f"{stem_name}.wav"
+    
+    if not stem_path.exists():
+        # 旧4ステムフォルダへのフォールバック
+        stem_path_4s = session_dir / "htdemucs" / song_stem / f"{stem_name}.wav"
+        if stem_path_4s.exists():
+            stem_path = stem_path_4s
+        else:
+            raise HTTPException(status_code=404, detail=f"ステム {stem_name} が見つかりません。先に音源分離を実行してください。")
+            
+    return FileResponse(stem_path, filename=f"{stem_name}.wav", media_type="audio/wav")
 
 
 # ------------------------------------------------------------------

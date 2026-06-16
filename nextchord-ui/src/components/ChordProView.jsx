@@ -1,6 +1,8 @@
 import React, { useMemo, useRef, useEffect, useState, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import GuitarChord from './GuitarChord';
+import PianoStaffChord from './PianoStaffChord';
+import BassChord from './BassChord';
 import { Maximize, Minimize } from 'lucide-react';
 import { chordproToPlainText, plainTextToChordpro } from '../utils/plainTextConverter';
 
@@ -126,6 +128,26 @@ function parseChordPro(text) {
         }
     }
 
+    // ── Post-process: 行内の先頭コードなし短セグメントを次セグメントにマージ ──
+    // 例: [{chord:'', lyrics:'つ'}, {chord:'G', lyrics:'まずいても'}] 
+    //   → [{chord:'G', lyrics:'つまずいても'}]
+    for (const line of result) {
+        if (line.type !== 'chord-lyric') continue;
+        for (const measure of (line.measures || [])) {
+            let j = 0;
+            while (j < measure.length - 1) {
+                const seg = measure[j];
+                const next = measure[j + 1];
+                if (!seg.chord && seg.lyrics && seg.lyrics.trim().length > 0 && seg.lyrics.trim().length <= 2 && next.chord) {
+                    next.lyrics = seg.lyrics.trim() + (next.lyrics || '');
+                    measure.splice(j, 1);
+                } else {
+                    j++;
+                }
+            }
+        }
+    }
+
     return result;
 }
 
@@ -210,7 +232,25 @@ const DIATONIC_CHORDS = {
   'G#m': ['G#m', 'A#dim', 'B', 'C#m', 'D#m', 'E', 'F#', 'D#', 'F##dim', 'G#m7', 'C#m7', 'F#7', 'Bmaj7', 'Emaj7', 'A#m7b5', 'D#7'],
 };
 
-function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEditingStateChange }) {
+const ROOTS = ["C", "C#", "Db", "D", "D#", "Eb", "E", "F", "F#", "Gb", "G", "G#", "Ab", "A", "A#", "Bb", "B"];
+const SUFFIXES = ["", "m", "7", "m7", "maj7", "sus4", "dim", "aug", "m7b5", "add9", "6", "m6", "9"];
+
+const parseChord = (chordStr) => {
+    if (!chordStr || chordStr === 'N.C.') return { root: '', suffix: '' };
+    const roots2 = ["C#", "Db", "D#", "Eb", "F#", "Gb", "G#", "Ab", "A#", "Bb"];
+    const root2 = roots2.find(r => chordStr.startsWith(r));
+    if (root2) {
+        return { root: root2, suffix: chordStr.substring(root2.length) };
+    }
+    const roots1 = ["C", "D", "E", "F", "G", "A", "B"];
+    const root1 = roots1.find(r => chordStr.startsWith(r));
+    if (root1) {
+        return { root: root1, suffix: chordStr.substring(root1.length) };
+    }
+    return { root: '', suffix: chordStr };
+};
+
+function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEditingStateChange, isActive }) {
     const [editing, setEditing] = useState(false);
     const [value, setValue] = useState(chord);
     const inputRef = useRef(null);
@@ -242,16 +282,27 @@ function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEdit
         if (val !== chord && onChordEdit) onChordEdit(time, val);
     };
 
-    const { diatonic, common } = useMemo(() => {
+    const { diatonic } = useMemo(() => {
         let diatonicList = [];
         if (songKey) {
             const cleanKey = songKey.replace(' major', '').replace(' minor', 'm');
             diatonicList = DIATONIC_CHORDS[cleanKey] || [];
         }
-        const defaults = ['C', 'D', 'E', 'F', 'G', 'A', 'B', 'Cm', 'Dm', 'Em', 'Fm', 'Gm', 'Am', 'Bm'];
-        const commonList = defaults.filter(c => !diatonicList.includes(c));
-        return { diatonic: diatonicList, common: commonList };
+        return { diatonic: diatonicList };
     }, [songKey]);
+
+    const { root: activeRoot, suffix: activeSuffix } = useMemo(() => parseChord(value), [value]);
+
+    const handleRootClick = (r) => {
+        const { suffix } = parseChord(value);
+        setValue(r + suffix);
+    };
+
+    const handleSuffixClick = (s) => {
+        const { root } = parseChord(value);
+        const activeR = root || 'C';
+        setValue(activeR + s);
+    };
 
     const renderCandidateButton = (cand, isDiatonic) => {
         const isSelected = value === cand;
@@ -330,7 +381,7 @@ function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEdit
                     position: 'absolute',
                     top: '100%',
                     left: 0,
-                    background: 'rgba(20, 20, 23, 0.85)',
+                    background: 'rgba(20, 20, 23, 0.9)',
                     backdropFilter: 'blur(20px)',
                     WebkitBackdropFilter: 'blur(20px)',
                     border: '1px solid rgba(255, 255, 255, 0.08)',
@@ -338,8 +389,8 @@ function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEdit
                     boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.7), 0 10px 15px -5px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.05)',
                     padding: '12px',
                     marginTop: '6px',
-                    width: '240px',
-                    maxHeight: '320px',
+                    width: '280px',
+                    maxHeight: '400px',
                     overflowY: 'auto',
                     zIndex: 9999,
                 }}>
@@ -440,37 +491,106 @@ function EditableChord({ chord, time, onChordEdit, onChordHover, songKey, onEdit
                         </div>
                     )}
 
-                    {common.length > 0 && (
-                        <div>
-                            <div style={{
-                                fontSize: '10px',
-                                color: 'rgba(255,255,255,0.4)',
-                                fontWeight: '600',
-                                textTransform: 'uppercase',
-                                letterSpacing: '0.05em',
-                                marginBottom: '6px',
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: '5px',
-                            }}>
-                                <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: 'rgba(255,255,255,0.2)' }}></span>
-                                その他
-                            </div>
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(4, 1fr)',
-                                gap: '6px',
-                            }}>
-                                {common.map(cand => renderCandidateButton(cand, false))}
-                            </div>
+                    {/* Root ＆ Suffix 選択グリッド */}
+                    <div style={{ marginBottom: '4px', borderTop: '1px solid rgba(255,255,255,0.06)', paddingTop: '12px' }}>
+                        <div style={{
+                            fontSize: '10px',
+                            color: 'rgba(255,255,255,0.4)',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                        }}>
+                            <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: '#818cf8', boxShadow: '0 0 6px #818cf8' }}></span>
+                            ルート音 (Root)
                         </div>
-                    )}
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(6, 1fr)',
+                            gap: '4px',
+                            marginBottom: '12px',
+                        }}>
+                            {ROOTS.map(r => {
+                                const isSelected = activeRoot === r;
+                                return (
+                                    <button
+                                        key={r}
+                                        onClick={(e) => { e.stopPropagation(); handleRootClick(r); }}
+                                        style={{
+                                            padding: '4px 0',
+                                            background: isSelected ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255,255,255,0.02)',
+                                            border: isSelected ? '1px solid #6366f1' : '1px solid rgba(255,255,255,0.06)',
+                                            borderRadius: '6px',
+                                            color: isSelected ? '#fff' : 'rgba(255,255,255,0.7)',
+                                            fontSize: '11px',
+                                            cursor: 'pointer',
+                                            textAlign: 'center',
+                                            transition: 'all 0.15s',
+                                        }}
+                                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                                    >
+                                        {r}
+                                    </button>
+                                );
+                            })}
+                        </div>
+
+                        <div style={{
+                            fontSize: '10px',
+                            color: 'rgba(255,255,255,0.4)',
+                            fontWeight: '600',
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.05em',
+                            marginBottom: '6px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '5px',
+                        }}>
+                            <span style={{ display: 'inline-block', width: '5px', height: '5px', borderRadius: '50%', background: '#ec4899', boxShadow: '0 0 6px #ec4899' }}></span>
+                            コードタイプ (Suffix)
+                        </div>
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(4, 1fr)',
+                            gap: '4px',
+                        }}>
+                            {SUFFIXES.map(s => {
+                                const isSelected = activeSuffix === s;
+                                const label = s === "" ? "Maj" : s;
+                                return (
+                                    <button
+                                        key={s}
+                                        onClick={(e) => { e.stopPropagation(); handleSuffixClick(s); }}
+                                        style={{
+                                            padding: '4px 0',
+                                            background: isSelected ? 'rgba(236, 72, 153, 0.2)' : 'rgba(255,255,255,0.02)',
+                                            border: isSelected ? '1px solid #ec4899' : '1px solid rgba(255,255,255,0.06)',
+                                            borderRadius: '6px',
+                                            color: isSelected ? '#fff' : 'rgba(255,255,255,0.7)',
+                                            fontSize: '11px',
+                                            cursor: 'pointer',
+                                            textAlign: 'center',
+                                            transition: 'all 0.15s',
+                                        }}
+                                        onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; }}
+                                        onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'rgba(255,255,255,0.02)'; }}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
                 </div>
             </div>
         );
     }
     return (
-        <span className="cp-chord-name cp-chord-interactive" translate="no"
+        <span className={`cp-chord-name cp-chord-interactive ${isActive ? 'cp-chord-active' : ''}`} translate="no"
             onClick={e => { e.stopPropagation(); setEditing(true); }}
             onMouseEnter={() => onChordHover?.(chord)}
             onMouseLeave={() => onChordHover?.(null)}
@@ -562,6 +682,7 @@ export function ChordProView({
     onChordHover = null,
     songKey = '',
     session = null,
+    instrument = 'guitar',
 }) {
     const containerRef = useRef(null);
     const activeLineRef = useRef(null);
@@ -716,6 +837,10 @@ export function ChordProView({
         }
         return -1;
     }, [currentTime, lineTimings]);
+
+    const activeChordObj = useMemo(() => {
+        return [...chordTimeline].reverse().find(c => currentTime >= c.time);
+    }, [chordTimeline, currentTime]);
 
     // ① コード追従モード: アクティブ行へスクロール
     useEffect(() => {
@@ -999,33 +1124,35 @@ export function ChordProView({
                                                         onClick={() => onSeek && lineTimings?.[currentTimingIdx] && 
                                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                                     >
-                                                        <div className="cp-chord-row" style={{ display: 'flex', width: '100%', alignItems: 'stretch', flexWrap: 'wrap' }}>
-                                                            {(line.measures || []).map((measureChords, mi) => (
-                                                                <div key={mi} className="cp-measure">
-                                                                    {measureChords.map((c, ci) => {
-                                                                        if (c === '|') return null;
-                                                                        const transposed = transposeChord(c, transpose);
-                                                                        const chordObj = windowChords[chordCounter];
-                                                                        const chordTime = chordObj ? chordObj.time : (lineStart + chordCounter * 2.0);
-                                                                        chordCounter++;
+                                                        <div className="cp-chord-row" style={{ display: 'grid', width: '100%', gridTemplateColumns: `repeat(${(line.measures || []).flat().filter(c => c !== '|').length}, 1fr)` }}>
+                                                            {(line.measures || []).flat().filter(c => c !== '|').map((c, ci) => {
+                                                                const transposed = transposeChord(c, transpose);
+                                                                const chordObj = windowChords[chordCounter];
+                                                                const chordTime = chordObj ? chordObj.time : (lineStart + chordCounter * 2.0);
+                                                                const isActiveChord = chordObj && activeChordObj && activeChordObj.time === chordObj.time;
+                                                                chordCounter++;
 
-                                                                        return (
-                                                                            <span key={ci} className="cp-chord" translate="no">
-                                                                                {onChordEdit ? (
-                                                                                    <EditableChord chord={transposed} time={chordTime}
-                                                                                        onChordEdit={onChordEdit} onChordHover={onChordHover} songKey={songKey}
-                                                                                        onEditingStateChange={setIsChordEditing} />
-                                                                                ) : (
-                                                                                    <span className="cp-chord-name">{transposed}</span>
-                                                                                )}
-                                                                                <div className={`cp-diagram-wrapper ${showDiagrams ? 'inline-mode' : 'hover-mode'}`}>
-                                                                                    <GuitarChord chordName={transposed} tuning={tuning} />
-                                                                                </div>
-                                                                            </span>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            ))}
+                                                                return (
+                                                                    <span key={ci} className="cp-chord" translate="no">
+                                                                        {onChordEdit ? (
+                                                                            <EditableChord chord={transposed} time={chordTime}
+                                                                                onChordEdit={onChordEdit} onChordHover={onChordHover} songKey={songKey}
+                                                                                onEditingStateChange={setIsChordEditing} isActive={isActiveChord} />
+                                                                        ) : (
+                                                                            <span className={`cp-chord-name ${isActiveChord ? 'cp-chord-active' : ''}`}>{transposed}</span>
+                                                                        )}
+                                                                        <div className={`cp-diagram-wrapper ${showDiagrams ? 'inline-mode' : 'hover-mode'}`}>
+                                                                            {instrument === 'piano' ? (
+                                                                                <PianoStaffChord chordName={transposed} />
+                                                                            ) : instrument === 'bass' ? (
+                                                                                <BassChord chordName={transposed} />
+                                                                            ) : (
+                                                                                <GuitarChord chordName={transposed} tuning={tuning} />
+                                                                            )}
+                                                                        </div>
+                                                                    </span>
+                                                                );
+                                                            })}
                                                         </div>
                                                     </div>
                                                 );
@@ -1064,61 +1191,68 @@ export function ChordProView({
                                                             onSeek(lineTimings[currentTimingIdx].startTime)}
                                                     >
                                                         <div style={{ display: 'flex', width: '100%', alignItems: 'stretch', flexWrap: 'wrap' }}>
-                                                            {(line.measures || []).map((measure, mi) => (
-                                                                <div key={mi} className="cp-measure">
-                                                                    {measure.map((seg, si) => {
-                                                                        const isBarLine = seg.chord === '|';
-                                                                        if (isBarLine && !seg.lyrics) return null;
+                                                            {(() => {
+                                                                const flatSegments = (line.measures || []).flat().filter(seg => seg.chord !== '|');
+                                                                return (
+                                                                    <div className="cp-measure cp-measure-flat" style={{ display: 'inline-grid', gridTemplateColumns: `repeat(${flatSegments.length}, auto)`, borderLeft: 'none', paddingLeft: 0, paddingRight: 0, columnGap: 0 }}>
+                                                                        {flatSegments.map((seg, si) => {
+                                                                            let chordTime = lineStart;
+                                                                            let transposed = '';
+                                                                            let isActiveChord = false;
+                                                                            if (seg.chord) {
+                                                                                transposed = transposeChord(seg.chord, transpose);
+                                                                                const chordObj = windowChords[chordCounter];
+                                                                                chordTime = chordObj ? chordObj.time : (lineStart + chordCounter * 2.0);
+                                                                                isActiveChord = chordObj && activeChordObj && activeChordObj.time === chordObj.time;
+                                                                                chordCounter++;
+                                                                            }
 
-                                                                        let chordTime = lineStart;
-                                                                        let transposed = '';
-                                                                        if (seg.chord && !isBarLine) {
-                                                                            transposed = transposeChord(seg.chord, transpose);
-                                                                            const chordObj = windowChords[chordCounter];
-                                                                            chordTime = chordObj ? chordObj.time : (lineStart + chordCounter * 2.0);
-                                                                            chordCounter++;
-                                                                        }
-
-                                                                        return (
-                                                                            <React.Fragment key={si}>
-                                                                                <span className="cp-segment">
-                                                                                    {seg.chord && !isBarLine ? (
-                                                                                        <span className="cp-chord" translate="no">
-                                                                                            {onChordEdit ? (
-                                                                                                <EditableChord chord={transposed} time={chordTime}
-                                                                                                    onChordEdit={onChordEdit} onChordHover={onChordHover} songKey={songKey}
-                                                                                                    onEditingStateChange={setIsChordEditing} />
-                                                                                            ) : (
-                                                                                                <span className="cp-chord-name">{transposed}</span>
-                                                                                            )}
-                                                                                            <div className={`cp-diagram-wrapper ${showDiagrams ? 'inline-mode' : 'hover-mode'}`}>
-                                                                                                <GuitarChord chordName={transposed} tuning={tuning} />
-                                                                                            </div>
-                                                                                        </span>
-                                                                                    ) : (
-                                                                                        <span className="cp-chord cp-chord-placeholder" style={{ visibility: 'hidden' }}>{"\u00A0"}</span>
-                                                                                    )}
-                                                                                    
-                                                                                    {onLyricEdit ? (
-                                                                                        <EditableLyricSegment 
-                                                                                            text={seg.lyrics || ''}
-                                                                                            onBlur={(newSegText) => {
-                                                                                                const flatSegs = line.measures.flat();
-                                                                                                const targetIdx = flatSegs.findIndex(s => s === seg);
-                                                                                                const updatedSegs = flatSegs.map((s, idx) => idx === targetIdx ? newSegText : (s.lyrics || ''));
-                                                                                                const newFullText = updatedSegs.join('');
-                                                                                                onLyricEdit(lineStart, newFullText);
-                                                                                            }}
-                                                                                        />
-                                                                                    ) : (
-                                                                                        <span className="cp-lyrics">{(!seg.lyrics) ? "\u00A0" : seg.lyrics}</span>
-                                                                                    )}
-                                                                                </span>
-                                                                            </React.Fragment>
-                                                                        );
-                                                                    })}
-                                                                </div>
-                                                            ))}
+                                                                            return (
+                                                                                <React.Fragment key={si}>
+                                                                                    <span className="cp-segment">
+                                                                                        {seg.chord ? (
+                                                                                            <span className="cp-chord" translate="no">
+                                                                                                {onChordEdit ? (
+                                                                                                    <EditableChord chord={transposed} time={chordTime}
+                                                                                                        onChordEdit={onChordEdit} onChordHover={onChordHover} songKey={songKey}
+                                                                                                        onEditingStateChange={setIsChordEditing} isActive={isActiveChord} />
+                                                                                                ) : (
+                                                                                                    <span className={`cp-chord-name ${isActiveChord ? 'cp-chord-active' : ''}`}>{transposed}</span>
+                                                                                                )}
+                                                                                                <div className={`cp-diagram-wrapper ${showDiagrams ? 'inline-mode' : 'hover-mode'}`}>
+                                                                                                    {instrument === 'piano' ? (
+                                                                                                        <PianoStaffChord chordName={transposed} />
+                                                                                                    ) : instrument === 'bass' ? (
+                                                                                                        <BassChord chordName={transposed} />
+                                                                                                    ) : (
+                                                                                                        <GuitarChord chordName={transposed} tuning={tuning} />
+                                                                                                    )}
+                                                                                                </div>
+                                                                                            </span>
+                                                                                        ) : (
+                                                                                            <span className="cp-chord cp-chord-placeholder" style={{ visibility: 'hidden' }}>{"\u00A0"}</span>
+                                                                                        )}
+                                                                                        
+                                                                                        {onLyricEdit ? (
+                                                                                            <EditableLyricSegment 
+                                                                                                text={seg.lyrics || ''}
+                                                                                                onBlur={(newSegText) => {
+                                                                                                    const targetIdx = flatSegments.findIndex(s => s === seg);
+                                                                                                    const updatedSegs = flatSegments.map((s, idx) => idx === targetIdx ? newSegText : (s.lyrics || ''));
+                                                                                                    const newFullText = updatedSegs.join('');
+                                                                                                    onLyricEdit(lineStart, newFullText);
+                                                                                                }}
+                                                                                            />
+                                                                                        ) : (
+                                                                                            <span className="cp-lyrics">{(!seg.lyrics) ? "\u00A0" : seg.lyrics}</span>
+                                                                                        )}
+                                                                                    </span>
+                                                                                </React.Fragment>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                );
+                                                            })()}
                                                         </div>
                                                     </div>
                                                 );

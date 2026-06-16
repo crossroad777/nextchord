@@ -1,11 +1,12 @@
 import React, { useEffect, useCallback, useState, useMemo } from "react";
 import {
   Music, Check, X, UploadCloud, AlertTriangle, FileText,
-  Sun, Moon, Settings
+  Sun, Moon, Settings, ArrowLeft
 } from 'lucide-react';
 import { InstrumentPanel } from "./components/InstrumentPanel";
 import { ChordLyricsView } from "./components/ChordLyricsView";
 import { ChordProView } from "./components/ChordProView";
+import { StemSplitterView } from "./components/StemSplitterView";
 import { UploadView } from "./components/UploadView";
 import { ProcessingView } from "./components/ProcessingView";
 import { ResultHeader } from "./components/ResultHeader";
@@ -68,6 +69,8 @@ export default function NextChordApp() {
     window.addEventListener('keydown', handleKeyboard);
     return () => window.removeEventListener('keydown', handleKeyboard);
   }, [app.handleExportMIDI, app.handleExportMusicXML, app.handleExportText, app.handleExportGP5]);
+
+
 
   // Track favorite bounce animation
   const [favBounce, setFavBounce] = useState(false);
@@ -144,7 +147,19 @@ export default function NextChordApp() {
             timelineHandleRef={app.timelineHandleRef}
           />
           <div className="flex-1 bg-[var(--gf-bg)] overflow-hidden">
-            {app.session.result?.chordpro_text ? (
+            {app.viewMode === 'stems' ? (
+              <div className="h-full p-4 overflow-y-auto">
+                <StemSplitterView
+                  sessionId={app.session.id}
+                  onToast={app.showToast}
+                  mainIsPlaying={app.isPlaying}
+                  mainCurrentTime={app.currentTime}
+                  playbackRate={app.playbackRate}
+                  onTogglePlay={app.togglePlay}
+                  onSeek={app.handleSeek}
+                />
+              </div>
+            ) : app.session.result?.chordpro_text ? (
               <ChordProView
                 chordproText={app.session.result.chordpro_text}
                 currentTime={app.currentTime}
@@ -159,6 +174,8 @@ export default function NextChordApp() {
                 onChordHover={setHoveredChord}
                 songKey={app.session.result?.key || app.session.key}
                 session={app.session}
+                onChordproChange={app.handleChordproChange}
+                instrument={app.instrument}
               />
             ) : (
               <div className="overflow-y-auto py-10 px-8 h-full">
@@ -182,7 +199,7 @@ export default function NextChordApp() {
               </div>
             )}
           </div>
-          {(app.instrument === 'guitar' || app.instrument === 'piano') && app.viewMode !== 'tab' && (
+          {(app.instrument === 'guitar' || app.instrument === 'piano' || app.instrument === 'bass') && app.viewMode !== 'tab' && app.viewMode !== 'stems' && (
             <div className="nc-instrument-panel">
               <InstrumentPanel
                 currentChord={hoveredChord ?? app.currentChord}
@@ -223,7 +240,16 @@ export default function NextChordApp() {
 
       {/* Header */}
       <header className="h-20 nc-gradient-bg flex items-center justify-between px-8 text-[var(--nc-text)] shadow-xl z-30 flex-shrink-0 relative">
-        <div className="flex items-center gap-8">
+        <div className="flex items-center gap-6">
+          <a
+            href="https://nextchord-portal.vercel.app/"
+            className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-full bg-white/10 hover:bg-white/20 text-white transition-all border border-white/10"
+            style={{ textDecoration: 'none' }}
+            title="ポータルに戻る"
+          >
+            <ArrowLeft size={14} />
+            <span>ポータル</span>
+          </a>
           <div className="font-black text-2xl tracking-tight cursor-pointer group flex items-center gap-2.5" style={{ fontFamily: "'Outfit', sans-serif" }} onClick={app.handleReset} role="button" tabIndex={0} aria-label="Go to home screen" onKeyDown={(e) => { if (e.key === 'Enter') app.handleReset(); }}>
             <div className="nc-header-logo-icon">
               <Music size={16} className="text-white" />
@@ -315,8 +341,8 @@ export default function NextChordApp() {
             />
           )}
 
-          {/* Processing state */}
-          {app.status === STATUS.PROCESSING && (
+          {/* Processing or Uploading state */}
+          {(app.status === STATUS.PROCESSING || app.status === STATUS.UPLOADING) && (
             <ProcessingView
               stepsDone={app.stepsDone}
               completedSteps={app.completedSteps}
@@ -337,11 +363,14 @@ export default function NextChordApp() {
                 </div>
                 <h2 className="nc-error-title">解析に失敗しました</h2>
                 <p className="nc-error-message">
-                  処理中に問題が発生しました。<br />ファイル形式やネットワーク接続を確認してください。
+                  {app.progressMsg || "処理中に問題が発生しました。"}
                 </p>
-                <div className="nc-error-detail">
-                  {app.progressMsg || "不明なエラー"}
-                </div>
+                {app.errorDetail && (
+                  <details className="nc-error-detail-collapse">
+                    <summary className="nc-error-detail-toggle">詳細ログを表示</summary>
+                    <pre className="nc-error-detail-log">{app.errorDetail}</pre>
+                  </details>
+                )}
                 <div className="nc-error-actions">
                   <button
                     onClick={() => app.fileInputRef.current.click()}
