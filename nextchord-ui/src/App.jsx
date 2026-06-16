@@ -365,12 +365,7 @@ export default function NextChordApp() {
                 <p className="nc-error-message">
                   {app.progressMsg || "処理中に問題が発生しました。"}
                 </p>
-                {app.errorDetail && (
-                  <details className="nc-error-detail-collapse">
-                    <summary className="nc-error-detail-toggle">詳細ログを表示</summary>
-                    <pre className="nc-error-detail-log">{app.errorDetail}</pre>
-                  </details>
-                )}
+
                 <div className="nc-error-actions">
                   <button
                     onClick={() => app.fileInputRef.current.click()}
